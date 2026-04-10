@@ -89,5 +89,17 @@ COPY skills/wss-profiler/SKILL.md /skills/wss-profiler/SKILL.md
 COPY wss_profiler.h /skills/wss-profiler/wss_profiler.h
 COPY wss_profiler.h /usr/local/include/wss_profiler.h
 
+# ── Claude Code slash commands ─────────────────────────────────────────────
+# ~/.claude/commands/*.md become /command-name slash commands inside Claude Code.
+# wss-profiler is baked in. The user's my-code skill is mounted at runtime and
+# copied in by the entrypoint.
+RUN mkdir -p /root/.claude/commands && \
+    cp /skills/wss-profiler/SKILL.md /root/.claude/commands/wss-profiler.md
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # /workspace is where the user's code lives (mounted at runtime).
 WORKDIR /workspace
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["bash"]
