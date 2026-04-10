@@ -1,5 +1,10 @@
 # Skill: my-code
 
+TRIGGER when: the user asks you to build, run, compile, test, profile, or
+modify code in this workspace; or mentions "my code", "the code", or any
+function/file name from the source layout below. Invoke this skill before
+doing any work so you have the correct build and run commands.
+
 <!--
   INSTRUCTIONS FOR THE USER:
   Copy this file to your code's skills directory as SKILL.md and fill in

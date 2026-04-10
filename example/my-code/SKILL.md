@@ -1,5 +1,11 @@
 # Skill: my-code
 
+TRIGGER when: the user asks you to build, run, compile, test, profile, or
+modify code in this workspace; or mentions "my code", "the code", "bench",
+"stream_kernel", "compute_kernel", or any other name from the source layout
+below. Invoke this skill before doing any work so you have the correct build
+and run commands.
+
 ## What this code is
 
 A synthetic MPI+OpenMP benchmark with two kernels that deliberately sit at
@@ -40,8 +46,7 @@ cd /workspace
 make profile
 ```
 
-The `profile` Makefile target automatically adds `-DPROFILE_WSS`,
-`-I/skills/wss-profiler` (or `-I..` outside the container), and `-lpapi`.
+The `profile` Makefile target automatically adds `-DPROFILE_WSS` and `-lpapi`.
 No manual flag injection is needed.
 
 ## Run command
