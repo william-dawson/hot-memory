@@ -46,7 +46,7 @@ RUN apt-get update && apt-get install -y \
     # PAPI hardware counters
     libpapi-dev \
     papi-tools \
-    # perf
+    # perf: generic installs the wrapper; the versioned pkg has the actual binary
     linux-tools-generic \
     linux-tools-common \
     # useful utilities
@@ -54,17 +54,12 @@ RUN apt-get update && apt-get install -y \
     git \
     strace \
     procps \
+    && TOOLS_PKG=$(apt-cache depends linux-tools-generic \
+        | awk '/Depends:.*linux-tools-[0-9]/{print $2}' | head -1) \
+    && apt-get install -y "$TOOLS_PKG" \
+    && PERF_BIN=$(find /usr/lib/linux-tools -name perf -type f | head -1) \
+    && ln -sf "$PERF_BIN" /usr/local/bin/perf \
     && rm -rf /var/lib/apt/lists/*
-
-# linux-tools-generic only installs the wrapper script; the actual perf binary
-# is in the versioned concrete package. Install it dynamically, then symlink
-# past the wrapper so perf runs regardless of the host kernel version.
-RUN TOOLS_PKG=$(apt-cache depends linux-tools-generic \
-        | awk '/Depends:.*linux-tools-[0-9]/{print $2}' | head -1) && \
-    apt-get install -y "$TOOLS_PKG" && \
-    PERF_BIN=$(find /usr/lib/linux-tools -name perf -type f | head -1) && \
-    ln -sf "$PERF_BIN" /usr/local/bin/perf && \
-    rm -rf /var/lib/apt/lists/*
 
 # ── Claude Code ───────────────────────────────────────────────────────────
 RUN curl -fsSL https://claude.ai/install.sh | bash
