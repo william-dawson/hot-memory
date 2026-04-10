@@ -1,49 +1,58 @@
 Bootstrap: docker
-From: wddawson/hotmemory:latest
+From: ubuntu:24.04
 
-# ── Notes ──────────────────────────────────────────────────────────────────
-#
-# Build:
-#   singularity build hotmemory.sif hotmemory.def
-#   # or with Apptainer:
-#   apptainer build hotmemory.sif hotmemory.def
-#
-# Run:
-#   export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
-#   singularity exec --bind /path/to/code:/workspace \
-#                    --bind /path/to/my-code-skill:/skills/my-code \
-#                    hotmemory.sif bash
-#
-# Privileges (required for /proc/self/clear_refs and perf):
-#   Ask your sysadmin to set on the host:
-#     sysctl kernel.perf_event_paranoid=-1
-#   Then run with:
-#     singularity exec --no-home ... (see DEVELOPING.md)
-#
-# ── Singularity-specific adjustments ───────────────────────────────────────
-#
-# Unlike Docker, Singularity:
-# - Runs as the real user (not root), so /root/.claude/ is not the user home
-# - Maps the user's real $HOME into the container
-# - Passes SINGULARITYENV_FOO env vars as FOO inside the container
+%files
+    skills/wss-profiler/SKILL.md  /skills/wss-profiler/SKILL.md
+    wss_profiler.h                /skills/wss-profiler/wss_profiler.h
+    wss_profiler.h                /usr/local/include/wss_profiler.h
 
 %environment
+    export DEBIAN_FRONTEND=noninteractive
     export PATH="/root/.local/bin:$PATH"
 
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update && apt-get install -y \
+        gcc g++ gfortran make \
+        openmpi-bin libopenmpi-dev \
+        libpapi-dev papi-tools \
+        linux-tools-generic linux-tools-common \
+        curl git strace procps \
+    && PERF_BIN=$(find /usr/lib/linux-tools-* -name perf -type f | head -1) \
+    && ln -sf "$PERF_BIN" /usr/local/bin/perf \
+    && rm -rf /var/lib/apt/lists/*
+
+    # Claude Code
+    curl -fsSL https://claude.ai/install.sh | bash
+
+    # API key helper — reads ANTHROPIC_API_KEY from the environment at runtime
+    mkdir -p /root/.claude
+    printf '{\n  "apiKeyHelper": "echo $ANTHROPIC_API_KEY"\n}\n' \
+        > /root/.claude/settings.json
+
+    # Bake in the wss-profiler slash command
+    mkdir -p /root/.claude/commands
+    cp /skills/wss-profiler/SKILL.md /root/.claude/commands/wss-profiler.md
+
 %runscript
-    # Copy baked-in skills and settings to the real user's home if not present.
-    # (In Docker this is done by the entrypoint; in Singularity $HOME is the
-    # real user's home directory on the host.)
+    # Singularity maps the real user's $HOME, not /root, so copy baked-in
+    # Claude config to the user's home on first run.
     mkdir -p "$HOME/.claude/commands"
 
     if [ ! -f "$HOME/.claude/settings.json" ]; then
         cp /root/.claude/settings.json "$HOME/.claude/settings.json"
     fi
 
-    cp /root/.claude/commands/wss-profiler.md "$HOME/.claude/commands/wss-profiler.md"
+    cp /root/.claude/commands/wss-profiler.md \
+       "$HOME/.claude/commands/wss-profiler.md"
 
     if [ -f /skills/my-code/SKILL.md ]; then
         cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
     fi
 
     exec "$@"
+
+%labels
+    Maintainer wddawson
+    Description WSS profiler + Claude Code for HPC MPI/OpenMP codes

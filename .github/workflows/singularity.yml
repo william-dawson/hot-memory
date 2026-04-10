@@ -1,11 +1,13 @@
 name: Build Singularity image
 
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
 
 jobs:
-  singularity:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +20,19 @@ jobs:
       - name: Build SIF
         run: apptainer build hotmemory.sif hotmemory.def
 
-      - name: Upload SIF to release
+      # On every push to main: upload as a workflow artifact (downloadable
+      # from the Actions tab, expires after 90 days).
+      - name: Upload artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotmemory-sif
+          path: hotmemory.sif
+          retention-days: 90
+
+      # On release: attach the SIF permanently so users can wget it.
+      - name: Attach SIF to release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: hotmemory.sif

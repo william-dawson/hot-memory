@@ -11,41 +11,45 @@ The idea here is to model what happens if you try to accelerate the code on a sm
 
 ## Quickstart
 
-Pull the image (requires a Linux amd64 host — perf and PAPI hardware counters do not work on Docker Desktop for Mac)
+Requires a Linux amd64 host (HPC node or workstation) — perf and PAPI
+hardware counters are not available inside Docker Desktop for Mac.
+
+**1. Get the container**
 
 ```bash
-docker pull wddawson/hotmemory:latest
+wget https://github.com/william-dawson/hot-memory/releases/latest/download/hotmemory.sif
 ```
 
 To me this is critical. There should be a container for all the development to live in. And inside this container is everything you need to work with the AI agent.
 
-Next write your code skill
+**2. Write your code skill**
 
 Copy the template and fill it in:
 
 ```bash
-cp -r skills/code-template my-code-skill
+git clone https://github.com/william-dawson/hot-memory.git
+cp -r hot-memory/skills/code-template my-code-skill
 $EDITOR my-code-skill/SKILL.md
 ```
 
 The template asks for your source layout, build command, run command, and any notes about which functions are the hot kernels. The user then switches into the mindset of writing a skill file about how to use their code, so that future agents can do their thing.
 
-Now run the container, passing your Anthropic API key from the host environment:
+**3. Run**
 
 ```bash
-docker run --privileged \
-  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-  -v /path/to/your/code:/workspace \
-  -v /path/to/my-code-skill:/skills/my-code \
-  -it wddawson/hotmemory:latest bash
+export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+
+singularity exec --bind /path/to/your/code:/workspace \
+                 --bind /path/to/my-code-skill:/skills/my-code \
+                 hotmemory.sif bash
 ```
 
-> **Host requirement (if perf returns "Permission denied"):**
+> **If perf returns "Permission denied"**, ask your sysadmin to run on the compute nodes:
 > ```bash
-> sudo sysctl kernel.perf_event_paranoid=-1
+> sysctl kernel.perf_event_paranoid=-1
 > ```
 
-Then you can start Claude Code inside the container
+**4. Start Claude Code**
 
 ```bash
 claude
@@ -82,11 +86,11 @@ The `example/` directory contains a synthetic benchmark and a fully filled-in
 code skill so you can try the whole flow immediately without writing any code.
 
 ```bash
-docker run --privileged \
-  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-  -v "$(pwd)/example":/workspace \
-  -v "$(pwd)/example/my-code":/skills/my-code \
-  -it wddawson/hotmemory:latest bash
+export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+
+singularity exec --bind "$(pwd)/example":/workspace \
+                 --bind "$(pwd)/example/my-code":/skills/my-code \
+                 hotmemory.sif bash
 ```
 
 Then inside the container:
