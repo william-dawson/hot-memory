@@ -14,7 +14,7 @@ The payoff is **GPU memory planning**: per-kernel hot set data lets you determin
 ### 1. Pull the image
 
 ```bash
-docker pull williamdawson/hot-memory:latest
+docker pull wddawson/hotmemory:latest
 ```
 
 ### 2. Write your code skill
@@ -34,7 +34,7 @@ The template asks for your source layout, build command, run command, and any no
 docker run --privileged \
   -v /path/to/your/code:/workspace \
   -v /path/to/my-code-skill:/skills/my-code \
-  -it williamdawson/hot-memory:latest bash
+  -it wddawson/hotmemory:latest bash
 ```
 
 > **Host requirement (if perf returns "Permission denied"):**

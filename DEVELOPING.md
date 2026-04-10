@@ -1,23 +1,28 @@
 # Developer notes
 
-How to build, test, and publish the `williamdawson/hot-memory` Docker image.
+How to build, test, and publish the `wddawson/hotmemory` Docker image.
 
 ---
 
 ## Prerequisites
 
 - Docker (tested with 24+)
-- A Docker Hub account with push access to `williamdawson/hot-memory`
+- A Docker Hub account with push access to `wddawson/hotmemory`
 - `docker login` already run
 
 ---
 
 ## Build the image
 
+The image targets `linux/amd64` (the platform HPC nodes run on). Use
+`buildx` so the build works correctly even when developing on an Apple
+Silicon Mac.
+
 ```bash
 git clone git@github.com:william-dawson/hot-memory.git
 cd hot-memory
-docker build -t williamdawson/hot-memory:latest .
+docker buildx build --platform linux/amd64 \
+  -t wddawson/hotmemory:latest .
 ```
 
 The build COPYs `skills/wss-profiler/SKILL.md` and `wss_profiler.h` into
@@ -31,9 +36,9 @@ skill) is mounted at runtime.
 Run the synthetic benchmark inside the freshly built image:
 
 ```bash
-docker run --privileged \
+docker run --privileged --platform linux/amd64 \
   -v "$(pwd)/example":/workspace \
-  williamdawson/hot-memory:latest \
+  wddawson/hotmemory:latest \
   bash -c '
     cd /workspace
     mpicc -O2 -fopenmp -DPROFILE_WSS -I/skills/wss-profiler bench.c \
@@ -54,11 +59,18 @@ the FLOPs column will be 0 but the hot-MB measurement should still work.
 ## Tag and push
 
 ```bash
-# Optionally tag a versioned release alongside latest
-docker tag williamdawson/hot-memory:latest williamdawson/hot-memory:$(git rev-parse --short HEAD)
+# Build and push in one step (recommended)
+docker buildx build --platform linux/amd64 \
+  -t wddawson/hotmemory:latest \
+  -t wddawson/hotmemory:$(git rev-parse --short HEAD) \
+  --push .
+```
 
-docker push williamdawson/hot-memory:latest
-docker push williamdawson/hot-memory:$(git rev-parse --short HEAD)
+Or push an already-built local image:
+
+```bash
+docker push wddawson/hotmemory:latest
+docker push wddawson/hotmemory:$(git rev-parse --short HEAD)
 ```
 
 ---
@@ -69,7 +81,7 @@ If a user's code needs additional libraries (FFTW, HDF5, NetCDF, …), they
 write a small Dockerfile that starts FROM the published image:
 
 ```dockerfile
-FROM williamdawson/hot-memory:latest
+FROM wddawson/hotmemory:latest
 RUN apt-get update && apt-get install -y libfftw3-dev libhdf5-dev \
     && rm -rf /var/lib/apt/lists/*
 ```
