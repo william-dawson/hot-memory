@@ -51,9 +51,14 @@ RUN apt-get update && apt-get install -y \
     linux-tools-generic \
     linux-tools-common \
     # useful utilities
+    curl \
+    git \
     strace \
     procps \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Claude Code ───────────────────────────────────────────────────────────
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
 # perf inside a container typically needs perf_event_paranoid=-1 on the host.
 # linux-tools-generic installs a kernel-versioned binary; create a stable
