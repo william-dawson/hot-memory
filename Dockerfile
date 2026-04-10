@@ -56,10 +56,15 @@ RUN apt-get update && apt-get install -y \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-# linux-tools-generic installs a kernel-versioned wrapper that checks uname -r.
-# Symlink the actual binary so perf works regardless of the host kernel version.
-RUN PERF_BIN=$(find /usr/lib/linux-tools -name perf -type f 2>/dev/null | head -1) && \
-    ln -sf "$PERF_BIN" /usr/local/bin/perf
+# linux-tools-generic only installs the wrapper script; the actual perf binary
+# is in the versioned concrete package. Install it dynamically, then symlink
+# past the wrapper so perf runs regardless of the host kernel version.
+RUN TOOLS_PKG=$(apt-cache depends linux-tools-generic \
+        | awk '/Depends:.*linux-tools-[0-9]/{print $2}' | head -1) && \
+    apt-get install -y "$TOOLS_PKG" && \
+    PERF_BIN=$(find /usr/lib/linux-tools -name perf -type f | head -1) && \
+    ln -sf "$PERF_BIN" /usr/local/bin/perf && \
+    rm -rf /var/lib/apt/lists/*
 
 # ── Claude Code ───────────────────────────────────────────────────────────
 RUN curl -fsSL https://claude.ai/install.sh | bash
