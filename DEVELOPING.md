@@ -47,13 +47,35 @@ cd /workspace && make profile && make run  # two [WSS] lines with hot MB + FLOPs
 
 ---
 
-## Tag and push
+## Publishing (CI handles this)
+
+**Docker image** — built and pushed to Docker Hub automatically on every
+push to `main` via `.github/workflows/docker.yml`. You need two secrets
+set in the GitHub repo:
+
+| Secret | Value |
+|--------|-------|
+| `DOCKERHUB_USERNAME` | `wddawson` |
+| `DOCKERHUB_TOKEN` | Docker Hub access token (not your password) |
+
+**Singularity SIF** — built and attached to a GitHub Release automatically
+via `.github/workflows/singularity.yml`. To publish a release:
 
 ```bash
+gh release create v1.0.0 --title "v1.0.0" --notes "Release notes here"
+```
+
+CI will build `hotmemory.sif` from the Docker Hub image and attach it.
+HPC users can then download it directly:
+
+```bash
+wget https://github.com/william-dawson/hot-memory/releases/latest/download/hotmemory.sif
+```
+
+**Manual push** (if you need to bypass CI):
+```bash
 docker buildx build --platform linux/amd64 \
-  -t wddawson/hotmemory:latest \
-  -t wddawson/hotmemory:$(git rev-parse --short HEAD) \
-  --push .
+  -t wddawson/hotmemory:latest --push .
 ```
 
 ---
@@ -64,7 +86,16 @@ Docker is typically unavailable on HPC clusters. Use the provided
 `hotmemory.def` to build a Singularity/Apptainer image from the Docker Hub
 image.
 
-### Build
+### Get the SIF
+
+Download the pre-built SIF from the latest GitHub Release (no Singularity
+install needed on your local machine):
+
+```bash
+wget https://github.com/william-dawson/hot-memory/releases/latest/download/hotmemory.sif
+```
+
+Or build it yourself from the def file:
 
 ```bash
 singularity build hotmemory.sif hotmemory.def

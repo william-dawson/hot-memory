@@ -1,0 +1,24 @@
+name: Build Singularity image
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  singularity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Apptainer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apptainer
+
+      - name: Build SIF
+        run: apptainer build hotmemory.sif hotmemory.def
+
+      - name: Upload SIF to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: hotmemory.sif
