@@ -28,6 +28,17 @@ The Dockerfile in this repo is the base image. The user extends it for their cod
 ### When to use
 The user says "find the hotspots", "where is time going", or "profile my code". Use this before Phase 2 to know which kernels to instrument.
 
+### perf availability check
+
+Before running perf, verify it works:
+```bash
+perf stat echo ok 2>&1 | head -3
+```
+
+If perf fails with a kernel version mismatch or permission error:
+- Tell the user: "perf is not available in this environment (likely Docker Desktop on Mac — perf requires a native Linux host). Skipping Phase 1. If you already know which kernels to instrument, I can go straight to Phase 2."
+- Proceed directly to Phase 2 if the user names a kernel, or ask them which functions they want measured.
+
 ### What to do
 
 1. **Read the user's code skill** to get the build and run commands.

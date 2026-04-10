@@ -70,12 +70,18 @@ RUN mkdir -p /root/.claude && \
     printf '{\n  "apiKeyHelper": "echo $ANTHROPIC_API_KEY"\n}\n' \
     > /root/.claude/settings.json
 
-# perf inside a container typically needs perf_event_paranoid=-1 on the host.
-# linux-tools-generic installs a kernel-versioned binary; create a stable
-# symlink so scripts can call /usr/local/bin/perf reliably.
+# perf: linux-tools-generic installs a wrapper that checks the running kernel
+# version and refuses to run if it doesn't match (a problem on Docker Desktop
+# for Mac, which uses a linuxkit kernel). Symlink past the wrapper directly to
+# the versioned binary so perf works on any Linux host.
+# On Docker Desktop for Mac perf syscalls still won't work — Phase 1 is
+# Linux-only. Phase 2 (WSS + PAPI) works everywhere.
 RUN PERF_BIN=$(find /usr/lib/linux-tools -name perf -type f 2>/dev/null | head -1); \
     if [ -n "$PERF_BIN" ]; then \
         ln -sf "$PERF_BIN" /usr/local/bin/perf; \
+    else \
+        printf '#!/bin/sh\necho "perf: not available (linuxkit kernel — run on a Linux host for Phase 1)" >&2\nexit 1\n' \
+        > /usr/local/bin/perf && chmod +x /usr/local/bin/perf; \
     fi
 
 # ── Install the wss-profiler skill ────────────────────────────────────────
