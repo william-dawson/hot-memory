@@ -9,6 +9,7 @@ How to build, test, and publish the `wddawson/hotmemory` Docker image.
 - Docker (tested with 24+)
 - A Docker Hub account with push access to `wddawson/hotmemory`
 - `docker login` already run
+- `ANTHROPIC_API_KEY` set in your host shell (passed into the container at runtime — never baked into the image)
 
 ---
 
@@ -28,6 +29,7 @@ Then test interactively with the built-in example:
 
 ```bash
 docker run --privileged \
+  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
   -v "$(pwd)/example":/workspace \
   -v "$(pwd)/example/my-code":/skills/my-code \
   -it wddawson/hotmemory:dev bash

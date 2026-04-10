@@ -30,10 +30,11 @@ $EDITOR my-code-skill/SKILL.md
 
 The template asks for your source layout, build command, run command, and any notes about which functions are the hot kernels. The user then switches into the mindset of writing a skill file about how to use their code, so that future agents can do their thing.
 
-Now run the container
+Now run the container, passing your Anthropic API key from the host environment:
 
 ```bash
 docker run --privileged \
+  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
   -v /path/to/your/code:/workspace \
   -v /path/to/my-code-skill:/skills/my-code \
   -it wddawson/hotmemory:latest bash
@@ -82,6 +83,7 @@ code skill so you can try the whole flow immediately without writing any code.
 
 ```bash
 docker run --privileged \
+  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
   -v "$(pwd)/example":/workspace \
   -v "$(pwd)/example/my-code":/skills/my-code \
   -it wddawson/hotmemory:latest bash

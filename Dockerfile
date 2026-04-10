@@ -63,6 +63,13 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 # all subsequent RUN steps and for interactive shells in the container.
 ENV PATH="/root/.local/bin:${PATH}"
 
+# Configure Claude Code to read the API key from the ANTHROPIC_API_KEY
+# environment variable passed in at runtime (docker run -e ANTHROPIC_API_KEY=...).
+# The key is never baked into the image.
+RUN mkdir -p /root/.claude && \
+    printf '{\n  "apiKeyHelper": "echo $ANTHROPIC_API_KEY"\n}\n' \
+    > /root/.claude/settings.json
+
 # perf inside a container typically needs perf_event_paranoid=-1 on the host.
 # linux-tools-generic installs a kernel-versioned binary; create a stable
 # symlink so scripts can call /usr/local/bin/perf reliably.
