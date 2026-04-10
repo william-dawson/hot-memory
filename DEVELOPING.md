@@ -12,7 +12,38 @@ How to build, test, and publish the `wddawson/hotmemory` Docker image.
 
 ---
 
-## Build the image
+## Local development workflow
+
+Multi-platform `buildx` builds cannot be loaded into the local Docker daemon
+(`--push` only). For iterating locally, build for the native platform only
+and use `--load`:
+
+```bash
+cd hot-memory
+docker buildx build --platform linux/arm64 --load \
+  -t wddawson/hotmemory:dev .
+```
+
+Then test interactively with the built-in example:
+
+```bash
+docker run --privileged \
+  -v "$(pwd)/example":/workspace \
+  -v "$(pwd)/example/my-code":/skills/my-code \
+  -it wddawson/hotmemory:dev bash
+```
+
+Inside the container, verify the two key things:
+```bash
+claude --version          # should print the Claude Code version
+cd /workspace && make profile && make run   # should print two [WSS] lines
+```
+
+Once happy, do the full publish (see "Tag and push" below).
+
+---
+
+## Build the image (for publishing)
 
 Build a multi-platform image covering both `linux/amd64` (HPC nodes) and
 `linux/arm64` (Apple Silicon). `buildx` handles the cross-compilation and
@@ -26,33 +57,8 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 ```
 
 The build COPYs `skills/wss-profiler/SKILL.md` and `wss_profiler.h` into
-the image at `/skills/wss-profiler/`. Everything else (user code, user code
-skill) is mounted at runtime.
-
----
-
-## Smoke-test locally
-
-Run the synthetic benchmark inside the freshly built image:
-
-```bash
-docker run --privileged \
-  -v "$(pwd)/example":/workspace \
-  wddawson/hotmemory:latest \
-  bash -c '
-    cd /workspace
-    mpicc -O2 -fopenmp -DPROFILE_WSS -I/skills/wss-profiler bench.c \
-          -o bench -lpapi
-    mpirun --allow-run-as-root -np 2 ./bench 2>&1
-  '
-```
-
-Expected output includes two `[WSS]` lines: `stream_kernel` with hundreds of
-MB and near-zero FLOP/byte, and `compute_kernel` with ~2 MB and high
-FLOP/byte.
-
-If PAPI counters are unavailable (some CI hosts restrict `perf_event_open`),
-the FLOPs column will be 0 but the hot-MB measurement should still work.
+`/skills/wss-profiler/` and `/usr/local/include/`. Everything else (user
+code, user code skill) is mounted at runtime.
 
 ---
 
