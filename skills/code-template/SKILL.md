@@ -1,9 +1,8 @@
-# Skill: my-code
+---
+description: Build/run/profile the code in this workspace. TRIGGER when: user asks to build, run, compile, test, profile, or modify code; or mentions any filename or function from the source layout. Invoke BEFORE starting any work.
+---
 
-TRIGGER when: the user asks you to build, run, compile, test, profile, or
-modify code in this workspace; or mentions "my code", "the code", or any
-function/file name from the source layout below. Invoke this skill before
-doing any work so you have the correct build and run commands.
+# Skill: my-code
 
 <!--
   INSTRUCTIONS FOR THE USER:

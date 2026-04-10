@@ -1,10 +1,8 @@
-# Skill: my-code
+---
+description: Build/run/profile the synthetic MPI+OpenMP benchmark in /workspace. TRIGGER when: user asks to build, run, compile, test, profile bench.c, stream_kernel, or compute_kernel. Invoke BEFORE starting any work.
+---
 
-TRIGGER when: the user asks you to build, run, compile, test, profile, or
-modify code in this workspace; or mentions "my code", "the code", "bench",
-"stream_kernel", "compute_kernel", or any other name from the source layout
-below. Invoke this skill before doing any work so you have the correct build
-and run commands.
+# Skill: my-code
 
 ## What this code is
 
@@ -18,7 +16,7 @@ or defaults to the number of cores).
 ## Source layout
 
 ```
-example/
+/workspace/
   bench.c       — entry point and both kernels; everything is in one file
   Makefile      — build targets: `bench` (plain) and `profile` (with WSS macros)
 ```
