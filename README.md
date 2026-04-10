@@ -1,11 +1,11 @@
 # hot-memory
 
-A Claude Code skill that profiles C/C++ MPI/OpenMP HPC codes to answer two questions:
+The point of this repository is to be kind of an example of what you might ask an outsourcing company to produce in terms of AI agent knowhow for doing performance modelling. We're using a simple test case right here. We assume the user has an MPI/OpenMP HPC code. They are wondering:
 
-1. **Where is time going?** — sampling via `perf`
-2. **For a given kernel: how many unique bytes are hot, and how many FLOPs does it execute?** — instrumentation via `/proc/clear_refs` + PAPI
+1. **Where is time going?**
+2. **For a given kernel: how many unique bytes are hot, and how many FLOPs does it execute?**
 
-The payoff is **GPU memory planning**: per-kernel hot set data lets you determine whether a code fits on a target GPU, what stays resident between kernels, and what must be explicitly swapped.
+The idea here is to model what happens if you try to accelerate the code on a small memory GPU. First, you need to know what your main kernels are. But second, you know you can't just dump everything on the GPU side for fear of running out of memory. So for each kernel we figure out its memory use to FLOP ratio. Then we can imagine doing some modelling to say "if the GPU is X fast, I could imagine swapping memory between phases."
 
 ---
 
@@ -17,6 +17,8 @@ The payoff is **GPU memory planning**: per-kernel hot set data lets you determin
 docker pull wddawson/hotmemory:latest
 ```
 
+To me this is critical. There should be a container for all the development to live in. And inside this container is everything you need to work with the AI agent.
+
 ### 2. Write your code skill
 
 Copy the template and fill it in:
@@ -26,7 +28,7 @@ cp -r skills/code-template my-code-skill
 $EDITOR my-code-skill/SKILL.md
 ```
 
-The template asks for your source layout, build command, run command, and any notes about which functions are the hot kernels.
+The template asks for your source layout, build command, run command, and any notes about which functions are the hot kernels. The user then switches into the mindset of writing a skill file about how to use their code, so that future agents can do their thing.
 
 ### 3. Run the container
 
@@ -58,7 +60,7 @@ Then ask:
 
 ## How it works
 
-Two Claude Code skills work together. Claude reads both and synthesizes — neither skill needs to know about the other.
+The key point here is that the company should provide inside the container both some software and SKILL files. The SKILL files outline general procedures for preparing data if needed, or using premade tools. Then there is a skill to use whatever custom software they made.
 
 ```
 /skills/
@@ -69,83 +71,4 @@ Two Claude Code skills work together. Claude reads both and synthesizes — neit
     SKILL.md              teaches Claude how to build and run your specific code
 ```
 
-### `wss-profiler` skill
-
-- **Phase 1 — Discovery**: `perf record`/`perf report` to rank functions by % of wall-clock time. No recompile needed.
-- **Phase 2 — Instrumentation**: `WSS_BEGIN()` / `WSS_END()` macros around individual kernel calls. Measures:
-  - **Hot bytes**: unique 4 KB pages touched, via `/proc/self/clear_refs` + `/proc/self/smaps`
-  - **FLOPs**: `PAPI_DP_OPS` + `PAPI_SP_OPS` (falls back to `PAPI_FP_OPS` on unsupported microarchitectures)
-  - **FLOP/byte**: a proxy for memory vs. compute pressure on this kernel's working set
-- **GPU memory planning**: interprets per-kernel hot sets to answer "will it fit?", "what stays resident?", and "what's the swap cost per timestep?"
-
-### `my-code` skill
-
-A short `SKILL.md` you write once per codebase. Template at [`skills/code-template/SKILL.md`](skills/code-template/SKILL.md).
-
----
-
-## The header
-
-`wss_profiler.h` is baked into the image at `/skills/wss-profiler/wss_profiler.h`. Claude copies it into your source tree when needed.
-
-```c
-#include "wss_profiler.h"
-
-MPI_Init(&argc, &argv);
-WSS_INIT();                 // once, after MPI_Init
-
-WSS_BEGIN();
-stencil_apply(grid, nx, ny, nz);
-WSS_END("stencil_apply");
-```
-
-Build flags when profiling:
-```
--DPROFILE_WSS -I/skills/wss-profiler -lpapi
-```
-
-Without `-DPROFILE_WSS`, all macros compile away to nothing.
-
-Output (stderr, rank 0 only):
-```
-[WSS] Profiling active on rank 0
-[WSS] stencil_apply                   512.0 MB hot     0.480 GFLOP     0.98 FLOP/byte
-```
-
----
-
-## FLOP/byte interpretation
-
-| FLOP/byte | Meaning |
-|-----------|---------|
-| < 1 | Sweeps data with little reuse — memory-bandwidth-bound |
-| 1–5 | Borderline — depends on hardware balance |
-| > 10 | Compute-heavy relative to working set — compute-bound |
-
-This is FLOP per byte of *working set*, not per byte of *bandwidth transferred*. It is not arithmetic intensity in the roofline sense — see [`plan.md`](plan.md) for the distinction.
-
----
-
-## GPU memory planning
-
-Once per-kernel hot sets are measured, Claude can answer:
-
-- **Will it fit?** `max(hot set)` is the realistic lower bound for device memory needed. Total allocation is the worst-case upper bound and is almost always too conservative.
-- **What stays resident?** Arrays hot in consecutive kernels should stay on device. Arrays cold between kernels can be evicted.
-- **Swap cost per timestep?** Bounded by `sum(hot MB)` (worst case) and `max(hot MB)` (best case). Given execution order, Claude computes the exact number.
-
----
-
-## Caveats
-
-- **4 KB page granularity.** Hot bytes are rounded up to the page. Small working sets carry significant rounding error; large ones (MB+) do not.
-- **Main thread FLOPs only.** PAPI counters are per-thread; OpenMP worker threads are not counted.
-- **smaps noise.** Stack, code, and library pages add a few MB to every measurement — negligible for large kernels.
-- **Rank 0 only.** For load-imbalanced codes the hottest rank may not be rank 0.
-- **PAPI availability varies.** Run `papi_avail` inside the container to see what your CPU exposes.
-
----
-
-## Example
-
-[`example/bench.c`](example/bench.c) is a synthetic MPI+OpenMP benchmark with two contrasting kernels — one memory-bound, one compute-bound — that exercises the full profiling flow.
+As for how this project works, that information should be in the SKILL. You should hop into the container, and ask Claude code to explain it to you. The SKILLS should describe the methodology, limitations, next steps, etc.
