@@ -58,7 +58,65 @@ docker buildx build --platform linux/amd64 \
 
 ---
 
-## Extending the image
+## Singularity / Apptainer (HPC deployment)
+
+Docker is typically unavailable on HPC clusters. Use the provided
+`hotmemory.def` to build a Singularity/Apptainer image from the Docker Hub
+image.
+
+### Build
+
+```bash
+singularity build hotmemory.sif hotmemory.def
+# or
+apptainer build hotmemory.sif hotmemory.def
+```
+
+### Run
+
+```bash
+export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+
+singularity exec \
+  --bind /path/to/your/code:/workspace \
+  --bind /path/to/your/code-skill:/skills/my-code \
+  hotmemory.sif bash
+```
+
+The `%runscript` copies the baked-in skills and `settings.json` into the
+real user's `~/.claude/` on first run (Singularity maps the host `$HOME`
+into the container, so `/root/.claude/` from the image is not the user's
+home).
+
+### Privileges
+
+`/proc/self/clear_refs` (WSS measurement) and `perf_event_open` require
+elevated privileges. Ask your sysadmin to set on the compute nodes:
+
+```bash
+sysctl kernel.perf_event_paranoid=-1
+```
+
+If you have fakeroot access:
+
+```bash
+singularity exec --fakeroot --bind ... hotmemory.sif bash
+```
+
+### Extending for your code's dependencies
+
+```singularity
+Bootstrap: docker
+From: wddawson/hotmemory:latest
+
+%post
+    apt-get update && apt-get install -y libfftw3-dev libhdf5-dev \
+        && rm -rf /var/lib/apt/lists/*
+```
+
+---
+
+## Extending the image (Docker)
 
 Users whose code needs additional libraries write a small Dockerfile on top:
 
@@ -76,7 +134,8 @@ The profiler skill, header, and Claude Code are already present.
 
 ```
 .
-├── Dockerfile                      image definition
+├── Dockerfile                      Docker image definition
+├── hotmemory.def                   Singularity/Apptainer definition file
 ├── entrypoint.sh                   copies my-code skill into Claude commands/
 ├── wss_profiler.h                  C profiling header (also COPYd into image)
 ├── skills/

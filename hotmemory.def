@@ -1,0 +1,49 @@
+Bootstrap: docker
+From: wddawson/hotmemory:latest
+
+# ── Notes ──────────────────────────────────────────────────────────────────
+#
+# Build:
+#   singularity build hotmemory.sif hotmemory.def
+#   # or with Apptainer:
+#   apptainer build hotmemory.sif hotmemory.def
+#
+# Run:
+#   export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+#   singularity exec --bind /path/to/code:/workspace \
+#                    --bind /path/to/my-code-skill:/skills/my-code \
+#                    hotmemory.sif bash
+#
+# Privileges (required for /proc/self/clear_refs and perf):
+#   Ask your sysadmin to set on the host:
+#     sysctl kernel.perf_event_paranoid=-1
+#   Then run with:
+#     singularity exec --no-home ... (see DEVELOPING.md)
+#
+# ── Singularity-specific adjustments ───────────────────────────────────────
+#
+# Unlike Docker, Singularity:
+# - Runs as the real user (not root), so /root/.claude/ is not the user home
+# - Maps the user's real $HOME into the container
+# - Passes SINGULARITYENV_FOO env vars as FOO inside the container
+
+%environment
+    export PATH="/root/.local/bin:$PATH"
+
+%runscript
+    # Copy baked-in skills and settings to the real user's home if not present.
+    # (In Docker this is done by the entrypoint; in Singularity $HOME is the
+    # real user's home directory on the host.)
+    mkdir -p "$HOME/.claude/commands"
+
+    if [ ! -f "$HOME/.claude/settings.json" ]; then
+        cp /root/.claude/settings.json "$HOME/.claude/settings.json"
+    fi
+
+    cp /root/.claude/commands/wss-profiler.md "$HOME/.claude/commands/wss-profiler.md"
+
+    if [ -f /skills/my-code/SKILL.md ]; then
+        cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
+    fi
+
+    exec "$@"
