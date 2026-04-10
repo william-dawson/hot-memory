@@ -13,7 +13,21 @@
 # Host may also need:
 #   sysctl kernel.perf_event_paranoid=-1
 #
-# To extend for your code's dependencies, start FROM this image:
+# ── Skill layout inside the container ─────────────────────────────────────
+#
+#   /skills/
+#     wss-profiler/SKILL.md   ← baked into the image (this repo)
+#     my-code/SKILL.md        ← mounted at runtime by the user
+#
+# ── Typical run command ───────────────────────────────────────────────────
+#
+#   docker run --privileged \
+#     -v /path/to/your/code:/workspace \
+#     -v /path/to/your/code-skill:/skills/my-code \
+#     -it wss-profiler:latest bash
+#
+# ── Extending the image for your code's dependencies ─────────────────────
+#
 #   FROM wss-profiler:latest
 #   RUN apt-get update && apt-get install -y libfftw3-dev libhdf5-dev ...
 
@@ -41,20 +55,20 @@ RUN apt-get update && apt-get install -y \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-# perf inside a container typically needs to use the host perf binary via
-# /proc/sys/kernel/perf_event_paranoid=-1 on the host. The linux-tools-generic
-# package installs a wrapper; the actual binary path includes the kernel version.
-# Create a stable symlink so scripts can call /usr/bin/perf reliably.
+# perf inside a container typically needs perf_event_paranoid=-1 on the host.
+# linux-tools-generic installs a kernel-versioned binary; create a stable
+# symlink so scripts can call /usr/local/bin/perf reliably.
 RUN PERF_BIN=$(find /usr/lib/linux-tools -name perf -type f 2>/dev/null | head -1); \
     if [ -n "$PERF_BIN" ]; then \
         ln -sf "$PERF_BIN" /usr/local/bin/perf; \
     fi
 
-WORKDIR /workspace
+# ── Install the wss-profiler skill ────────────────────────────────────────
+# The wss-profiler skill is baked into the image so Claude Code can read it
+# without the user having to mount it. The user's code skill is mounted at
+# runtime at /skills/my-code (see run command above).
+COPY skills/wss-profiler/SKILL.md /skills/wss-profiler/SKILL.md
+COPY wss_profiler.h                /skills/wss-profiler/wss_profiler.h
 
-# The user mounts their code at /workspace and the skill at /skills.
-# Example run:
-#   docker run --privileged \
-#     -v $(pwd)/my-code:/workspace \
-#     -v $(pwd)/skills:/skills \
-#     -it wss-profiler:latest bash
+# /workspace is where the user's code lives (mounted at runtime).
+WORKDIR /workspace
