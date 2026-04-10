@@ -5,13 +5,13 @@ The point of this repository is to be kind of an example of what you might ask a
 1. **Where is time going?**
 2. **For a given kernel: how many unique bytes are hot, and how many FLOPs does it execute?**
 
-The idea here is to model what happens if you try to accelerate the code on a small memory GPU. First, you need to know what your main kernels are. But second, you know you can't just dump everything on the GPU side for fear of running out of memory. So for each kernel we figure out its memory use to FLOP ratio. Then we can imagine doing some modelling to say "if the GPU is X fast, I could imagine swapping memory between phases."
+The idea here is to model what happens if you try to accelerate the code on a small memory GPU (like a consumer RTX). First, you need to know what your main kernels are. But second, you know you can't just dump everything on the GPU side for fear of running out of memory. So for each kernel we figure out its memory use to FLOP ratio. Then we can imagine doing some modelling to say "if the GPU is X fast, I could imagine swapping memory between phases."
 
 ---
 
 ## Quickstart
 
-### 1. Pull the image
+Pull the image
 
 ```bash
 docker pull wddawson/hotmemory:latest
@@ -19,7 +19,7 @@ docker pull wddawson/hotmemory:latest
 
 To me this is critical. There should be a container for all the development to live in. And inside this container is everything you need to work with the AI agent.
 
-### 2. Write your code skill
+Next write your code skill
 
 Copy the template and fill it in:
 
@@ -30,7 +30,7 @@ $EDITOR my-code-skill/SKILL.md
 
 The template asks for your source layout, build command, run command, and any notes about which functions are the hot kernels. The user then switches into the mindset of writing a skill file about how to use their code, so that future agents can do their thing.
 
-### 3. Run the container
+Now run the container
 
 ```bash
 docker run --privileged \
@@ -44,17 +44,17 @@ docker run --privileged \
 > sudo sysctl kernel.perf_event_paranoid=-1
 > ```
 
-### 4. Start Claude Code inside the container
+Then you can start Claude Code inside the container
 
 ```bash
 claude
 ```
 
-Then ask:
+And ask:
 
 - *"Find the hotspots in my code."* → Claude reads both skills, runs `perf`, reports top functions by % wall-clock time.
 - *"Measure the working set of stencil_apply."* → Claude copies the header, adds macros, rebuilds, runs, reports hot MB + FLOP/byte.
-- *"Will this fit on an A100?"* → Claude uses the measured hot sets to reason about GPU memory.
+- *"Will this fit on an RTX5070?"* → Claude uses the measured hot sets to reason about GPU memory.
 
 ---
 
