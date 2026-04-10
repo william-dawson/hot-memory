@@ -2,30 +2,32 @@
 
 How to build, test, and publish the `wddawson/hotmemory` Docker image.
 
+**Platform: `linux/amd64` only.** perf and PAPI hardware counters require a
+real Linux host. Docker Desktop for Mac does not expose CPU performance
+counters from its VM kernel, so profiling does not work there. Use a Linux
+machine or HPC node for all testing.
+
 ---
 
 ## Prerequisites
 
 - Docker (tested with 24+)
+- A Linux host (amd64) for testing
 - A Docker Hub account with push access to `wddawson/hotmemory`
 - `docker login` already run
-- `ANTHROPIC_API_KEY` set in your host shell (passed into the container at runtime — never baked into the image)
+- `ANTHROPIC_API_KEY` set in your host shell
 
 ---
 
 ## Local development workflow
 
-Multi-platform `buildx` builds cannot be loaded into the local Docker daemon
-(`--push` only). For iterating locally, build for the native platform only
-and use `--load`:
-
 ```bash
 cd hot-memory
-docker buildx build --platform linux/arm64 --load \
+docker buildx build --platform linux/amd64 --load \
   -t wddawson/hotmemory:dev .
 ```
 
-Then test interactively with the built-in example:
+Test with the built-in example:
 
 ```bash
 docker run --privileged \
@@ -35,58 +37,30 @@ docker run --privileged \
   -it wddawson/hotmemory:dev bash
 ```
 
-Inside the container, verify the two key things:
-```bash
-claude --version          # should print the Claude Code version
-cd /workspace && make profile && make run   # should print two [WSS] lines
-```
-
-Once happy, do the full publish (see "Tag and push" below).
-
----
-
-## Build the image (for publishing)
-
-Build a multi-platform image covering both `linux/amd64` (HPC nodes) and
-`linux/arm64` (Apple Silicon). `buildx` handles the cross-compilation and
-produces a single manifest that Docker pulls the right variant from.
+Inside the container:
 
 ```bash
-git clone git@github.com:william-dawson/hot-memory.git
-cd hot-memory
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t wddawson/hotmemory:latest .
+claude --version                          # Claude Code is available
+perf stat echo ok                         # perf works
+cd /workspace && make profile && make run  # two [WSS] lines with hot MB + FLOPs
 ```
-
-The build COPYs `skills/wss-profiler/SKILL.md` and `wss_profiler.h` into
-`/skills/wss-profiler/` and `/usr/local/include/`. Everything else (user
-code, user code skill) is mounted at runtime.
 
 ---
 
 ## Tag and push
 
 ```bash
-# Build and push in one step (recommended)
-docker buildx build --platform linux/amd64,linux/arm64 \
+docker buildx build --platform linux/amd64 \
   -t wddawson/hotmemory:latest \
   -t wddawson/hotmemory:$(git rev-parse --short HEAD) \
   --push .
-```
-
-Or push an already-built local image:
-
-```bash
-docker push wddawson/hotmemory:latest
-docker push wddawson/hotmemory:$(git rev-parse --short HEAD)
 ```
 
 ---
 
 ## Extending the image
 
-If a user's code needs additional libraries (FFTW, HDF5, NetCDF, …), they
-write a small Dockerfile that starts FROM the published image:
+Users whose code needs additional libraries write a small Dockerfile on top:
 
 ```dockerfile
 FROM wddawson/hotmemory:latest
@@ -94,8 +68,7 @@ RUN apt-get update && apt-get install -y libfftw3-dev libhdf5-dev \
     && rm -rf /var/lib/apt/lists/*
 ```
 
-They build and run that derived image; the profiler skill and header are
-already present at `/skills/wss-profiler/`.
+The profiler skill, header, and Claude Code are already present.
 
 ---
 
@@ -104,6 +77,7 @@ already present at `/skills/wss-profiler/`.
 ```
 .
 ├── Dockerfile                      image definition
+├── entrypoint.sh                   copies my-code skill into Claude commands/
 ├── wss_profiler.h                  C profiling header (also COPYd into image)
 ├── skills/
 │   ├── wss-profiler/
@@ -112,7 +86,8 @@ already present at `/skills/wss-profiler/`.
 │       └── SKILL.md                template for users to write their code skill
 ├── example/
 │   ├── bench.c                     synthetic MPI+OpenMP benchmark
-│   └── Makefile
+│   ├── Makefile
+│   └── my-code/SKILL.md            filled-in code skill for the example
 ├── plan.md                         design doc and methodology
 ├── README.md                       user-facing docs
 └── DEVELOPING.md                   this file
@@ -122,23 +97,11 @@ already present at `/skills/wss-profiler/`.
 
 ## perf inside containers
 
-`perf` requires either `--privileged` or the combination of
-`--cap-add SYS_ADMIN --cap-add SYS_PTRACE --security-opt seccomp=unconfined`.
-The host kernel must also allow perf events:
+`perf` requires `--privileged` and the host kernel must allow perf events:
 
 ```bash
 sudo sysctl kernel.perf_event_paranoid=-1
 ```
 
-The Dockerfile installs `linux-tools-generic` and creates a stable symlink at
-`/usr/local/bin/perf` pointing to the kernel-versioned binary inside the
-image. If the container's kernel version differs significantly from the host's,
-perf may still work (it uses the host kernel's perf subsystem via syscalls)
-but the symlink target inside the image may not match. In that case, bind-mount
-the host perf binary:
-
-```bash
-docker run --privileged \
-  -v $(which perf):/usr/local/bin/perf \
-  ...
-```
+The entrypoint symlinks the installed linux-tools binary past the
+kernel-version wrapper so perf runs correctly on any Linux amd64 host.

@@ -11,7 +11,7 @@ The idea here is to model what happens if you try to accelerate the code on a sm
 
 ## Quickstart
 
-Pull the image
+Pull the image (requires a Linux amd64 host — perf and PAPI hardware counters do not work on Docker Desktop for Mac)
 
 ```bash
 docker pull wddawson/hotmemory:latest

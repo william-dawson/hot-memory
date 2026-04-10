@@ -28,17 +28,6 @@ The Dockerfile in this repo is the base image. The user extends it for their cod
 ### When to use
 The user says "find the hotspots", "where is time going", or "profile my code". Use this before Phase 2 to know which kernels to instrument.
 
-### perf availability check
-
-Before running perf, verify it works:
-```bash
-perf stat echo ok 2>&1 | head -3
-```
-
-If perf fails with a kernel version mismatch or permission error:
-- Tell the user: "perf is not available in this environment (likely Docker Desktop on Mac — perf requires a native Linux host). Skipping Phase 1. If you already know which kernels to instrument, I can go straight to Phase 2."
-- Proceed directly to Phase 2 if the user names a kernel, or ask them which functions they want measured.
-
 ### What to do
 
 1. **Read the user's code skill** to get the build and run commands.
@@ -266,6 +255,6 @@ With known execution order and device memory budget, compute the exact number:
 | `PAPI library init failed` | PAPI not installed or no hardware counter access | Install `libpapi-dev`; may need `--privileged` |
 | `No FP PAPI events available` | Microarchitecture doesn't expose standard events | Run `papi_avail` and use native event names (not yet supported in header) |
 | perf says `Permission denied` | `perf_event_paranoid` too restrictive | Run `sysctl kernel.perf_event_paranoid=-1` on the host |
-| FLOP count is 0 | PAPI events not added | Check PAPI init messages in stderr |
+| FLOP count is 0 | PAPI events not added, or hardware counters not exposed by the host (VM/container) | Check PAPI init messages in stderr. If counters are unavailable, estimate FLOPs by reading the kernel source: count floating-point operations per element × element count. State clearly it is a theoretical estimate, not a measured value. |
 | Hot MB seems too high | smaps noise (stack, libs) | For large kernels (>50 MB), noise is <5%. For small kernels, interpret with caution. |
 | Hot MB is the same across kernels | clear_refs not working | Verify `--privileged`; check for `[WSS] cannot open` error |
