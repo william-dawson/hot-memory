@@ -59,6 +59,9 @@ RUN apt-get update && apt-get install -y \
 
 # ── Claude Code ───────────────────────────────────────────────────────────
 RUN curl -fsSL https://claude.ai/install.sh | bash
+# The install script drops the binary in ~/.local/bin; put it on PATH for
+# all subsequent RUN steps and for interactive shells in the container.
+ENV PATH="/root/.local/bin:${PATH}"
 
 # perf inside a container typically needs perf_event_paranoid=-1 on the host.
 # linux-tools-generic installs a kernel-versioned binary; create a stable
@@ -73,7 +76,11 @@ RUN PERF_BIN=$(find /usr/lib/linux-tools -name perf -type f 2>/dev/null | head -
 # without the user having to mount it. The user's code skill is mounted at
 # runtime at /skills/my-code (see run command above).
 COPY skills/wss-profiler/SKILL.md /skills/wss-profiler/SKILL.md
-COPY wss_profiler.h                /skills/wss-profiler/wss_profiler.h
+# Copy header into the skill directory (for Claude to read) and into the
+# system include path (so user code can #include "wss_profiler.h" without
+# any -I flag).
+COPY wss_profiler.h /skills/wss-profiler/wss_profiler.h
+COPY wss_profiler.h /usr/local/include/wss_profiler.h
 
 # /workspace is where the user's code lives (mounted at runtime).
 WORKDIR /workspace

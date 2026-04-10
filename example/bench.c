@@ -22,7 +22,7 @@
 #include <string.h>
 #include <mpi.h>
 #include <omp.h>
-#include "../wss_profiler.h"
+#include "wss_profiler.h"
 
 #define STREAM_N   (32 * 1024 * 1024)   /* 32M doubles = 256 MB */
 #define COMPUTE_N  (256 * 1024)          /* 256K doubles = 2 MB */

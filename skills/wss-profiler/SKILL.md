@@ -120,9 +120,9 @@ When built without `-DPROFILE_WSS`, all macros are empty — zero overhead, no c
 
 4. **Rebuild** with PAPI linked:
    ```
-   make EXTRA_CFLAGS="-DPROFILE_WSS -I/path/to/header" EXTRA_LDFLAGS="-lpapi"
+   make EXTRA_CFLAGS="-DPROFILE_WSS" EXTRA_LDFLAGS="-lpapi"
    ```
-   Adapt to the user's actual build system (CMake, manual gcc invocation, etc.).
+   `wss_profiler.h` is installed at `/usr/local/include` in the container — no `-I` flag needed. Adapt the make invocation to the user's actual build system (CMake, manual gcc invocation, etc.).
 
 5. **Run normally** (same command as always):
    ```bash
