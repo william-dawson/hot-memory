@@ -14,14 +14,14 @@ How to build, test, and publish the `wddawson/hotmemory` Docker image.
 
 ## Build the image
 
-The image targets `linux/amd64` (the platform HPC nodes run on). Use
-`buildx` so the build works correctly even when developing on an Apple
-Silicon Mac.
+Build a multi-platform image covering both `linux/amd64` (HPC nodes) and
+`linux/arm64` (Apple Silicon). `buildx` handles the cross-compilation and
+produces a single manifest that Docker pulls the right variant from.
 
 ```bash
 git clone git@github.com:william-dawson/hot-memory.git
 cd hot-memory
-docker buildx build --platform linux/amd64 \
+docker buildx build --platform linux/amd64,linux/arm64 \
   -t wddawson/hotmemory:latest .
 ```
 
@@ -36,7 +36,7 @@ skill) is mounted at runtime.
 Run the synthetic benchmark inside the freshly built image:
 
 ```bash
-docker run --privileged --platform linux/amd64 \
+docker run --privileged \
   -v "$(pwd)/example":/workspace \
   wddawson/hotmemory:latest \
   bash -c '
@@ -60,7 +60,7 @@ the FLOPs column will be 0 but the hot-MB measurement should still work.
 
 ```bash
 # Build and push in one step (recommended)
-docker buildx build --platform linux/amd64 \
+docker buildx build --platform linux/amd64,linux/arm64 \
   -t wddawson/hotmemory:latest \
   -t wddawson/hotmemory:$(git rev-parse --short HEAD) \
   --push .
