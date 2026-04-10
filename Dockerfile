@@ -54,10 +54,7 @@ RUN apt-get update && apt-get install -y \
     git \
     strace \
     procps \
-    && TOOLS_PKG=$(apt-cache depends linux-tools-generic \
-        | awk '/Depends:.*linux-tools-[0-9]/{print $2}' | head -1) \
-    && apt-get install -y "$TOOLS_PKG" \
-    && PERF_BIN=$(find /usr/lib/linux-tools -name perf -type f | head -1) \
+    && PERF_BIN=$(find /usr/lib/linux-tools-* -name perf -type f | head -1) \
     && ln -sf "$PERF_BIN" /usr/local/bin/perf \
     && rm -rf /var/lib/apt/lists/*
 
