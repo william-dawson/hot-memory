@@ -72,3 +72,34 @@ The key point here is that the company should provide inside the container both 
 ```
 
 As for how this project works, that information should be in the SKILL. You should hop into the container, and ask Claude code to explain it to you. The SKILLS should describe the methodology, limitations, next steps, etc.
+
+---
+
+## Try it with the built-in example
+
+The `example/` directory contains a synthetic benchmark and a fully filled-in
+code skill so you can try the whole flow immediately without writing any code.
+
+```bash
+docker run --privileged \
+  -v "$(pwd)/example":/workspace \
+  -v "$(pwd)/example/my-code":/skills/my-code \
+  -it wddawson/hotmemory:latest bash
+```
+
+Then inside the container:
+
+```bash
+claude
+```
+
+Try asking:
+- *"Find the hotspots in this code."*
+- *"Measure the working set of both kernels."*
+- *"Would this fit on a GPU with 4 GB of memory?"*
+
+The example has two kernels that sit at opposite ends of the spectrum on
+purpose — `stream_kernel` is memory-bound (~768 MB hot, near-zero FLOP/byte)
+and `compute_kernel` is compute-bound (~2 MB hot, ~128 FLOP/byte) — so the
+profiler output is easy to interpret and serves as a sanity check that
+everything is working.
