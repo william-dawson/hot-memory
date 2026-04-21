@@ -155,7 +155,13 @@ The skill file is the authoritative, actionable description of the methodology. 
 - **smaps noise floor is a few MB.** For kernels with small working sets (<10 MB), the hot-byte count includes stack, code segment, and library pages. Interpret with caution; for large kernels it's negligible.
 ---
 
-## Claude Code setup in the container
+## OpenMPI inside fakeroot containers
+
+OpenMPI's `hwloc` topology detection sees only 1 slot inside a Singularity `--fakeroot` namespace, even when `nproc` and `/proc/cpuinfo` show the correct number of cores (e.g. 20). This causes `mpirun -np 2` to fail with "not enough slots". The fix is `OMPI_MCA_rmaps_base_oversubscribe=1` set in `%environment`, which tells OpenMPI to skip its broken slot detection. This is not true oversubscription — the cores are available, OpenMPI just can't see them through the user namespace.
+
+Additionally, `--fakeroot` makes the user appear as root, so OpenMPI requires `OMPI_ALLOW_RUN_AS_ROOT=1` and `OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1`. Both are set in `%environment`.
+
+---
 
 **Installation approach**: Claude Code is installed via `npm install -g @anthropic-ai/claude-code` into `/usr/bin/claude`, not via the official install script. The install script tries to symlink into `$HOME/.local/share/claude/`, which during `--fakeroot` builds resolves to the host user's home on the host filesystem — the binary ends up outside the SIF and is inaccessible at runtime.
 
