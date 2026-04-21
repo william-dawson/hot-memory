@@ -39,7 +39,7 @@ https://github.com/UK-MAC/CloverLeaf_ref.
   InputDecks/              — alternative input decks for different test problems
 ```
 
-The hot kernels per timestep (in execution order) are:
+The kernels called per timestep (in execution order) are:
 1. `ideal_gas` — equation of state
 2. `viscosity` — artificial viscosity
 3. `calc_dt` — timestep control

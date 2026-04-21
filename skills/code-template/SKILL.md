@@ -19,7 +19,7 @@ TODO
 
 ## Source layout
 
-List the files that contain the hot kernels, roughly. Example:
+List the key source files. Example:
 
 ```
 src/main.c          — entry point, MPI init, time loop
