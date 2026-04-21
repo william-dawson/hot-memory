@@ -272,10 +272,10 @@ With known execution order and device memory budget, compute the exact number:
 
 ---
 
-## Generating a code skill for an unknown project
+## Generating a code skill for the target project
 
-When the user asks you to generate a skill file for a project (e.g. "make
-a skill file for the code in /workspace"), follow this procedure:
+When the user asks you to generate a skill file for their project (e.g.
+"make a skill file for the code in /workspace"), follow this procedure:
 
 1. **Explore the source tree**: `ls`, `find`, look at file extensions to
    determine the language (C, C++, Fortran, mixed).
