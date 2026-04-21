@@ -207,13 +207,26 @@ When built without `-DPROFILE_WSS`, all macros are empty — zero overhead, no c
 
 1. **Copy `wss_profiler.h`** into the user's source directory (or wherever their Makefile can find it with `-I.`).
 
-2. **Edit the file containing `main()`** (or wherever `MPI_Init` is called):
-   ```c
-   #include "wss_profiler.h"
+2. **Initialise at the top level, instrument wherever needed.**
+   `WSS_INIT()` must be called once in the file containing `main()` (or
+   wherever `MPI_Init` is), right after `MPI_Init`. But `WSS_BEGIN()` and
+   `WSS_END()` can go in any file — they don't need to be in the same
+   file as `WSS_INIT()`. Include the header (or `use wss_profiler_mod`
+   for Fortran) in each file where you place `WSS_BEGIN()`/`WSS_END()`
+   calls. The init and the measurements are independent — init sets up
+   PAPI and rank detection globally, then any code path can measure.
 
-   // ... existing code ...
+   ```c
+   // main.c — init only
+   #include "wss_profiler.h"
    MPI_Init(&argc, &argv);
-   WSS_INIT();   // add this line
+   WSS_INIT();
+
+   // solver.c — measurements
+   #include "wss_profiler.h"
+   WSS_BEGIN();
+   matvec(A, p, Ap);
+   WSS_END("matvec");
    ```
 
 3. **Choose the right instrumentation granularity.** This is the most
