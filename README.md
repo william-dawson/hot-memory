@@ -49,7 +49,7 @@ Fill in your source layout, build command, run command, and which functions are 
 export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
 export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
 
-singularity run --fakeroot --no-home \
+singularity run --fakeroot \
                 --bind /path/to/your/code:/workspace \
                 --bind /path/to/my-code-skill:/skills/my-code \
                 ./hotmemory.sif bash
@@ -99,7 +99,7 @@ The `example/` directory contains a synthetic MPI+OpenMP benchmark with two kern
 export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
 export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
 
-singularity run --fakeroot --no-home \
+singularity run --fakeroot \
                 --bind "$(pwd)/example":/workspace \
                 --bind "$(pwd)/example/my-code":/skills/my-code \
                 ./hotmemory.sif bash

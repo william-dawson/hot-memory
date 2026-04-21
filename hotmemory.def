@@ -34,10 +34,13 @@ From: ubuntu:24.04
     # Symlink is not needed — npm -g puts claude in /usr/bin/claude
 
 %runscript
-    # Run with --no-home so the host $HOME is not mounted.
-    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    # Create a clean HOME inside the container to avoid picking up the host
+    # user's dotfiles (broken claude symlinks, stale settings.json, etc.)
+    # while still having a fully writable home directory.
+    export HOME=/tmp/claude-home
+    mkdir -p "$HOME/.claude/commands" "$HOME/.local"
 
-    mkdir -p "$HOME/.claude/commands"
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     cp /skills/wss-profiler/SKILL.md "$HOME/.claude/commands/wss-profiler.md"
 
