@@ -82,7 +82,7 @@ PAPI_MEM_STR=$( [ "$PAPI_MEM" -gt 0 ] && echo "available" || echo "not available
 # info automatically on every interaction — no skill invocation needed.
 cat > "$HOME/.claude/settings.json" << SETTINGS
 {
-  "systemPrompt": "You are inside a hot-memory profiling container. Architecture: $ARCH. CPUs available: $NCPUS. perf hardware counters: $PERF_OK. PAPI FP counters: $PAPI_FP_STR. PAPI load/store counters: $PAPI_MEM_STR. RULES: (1) Do not use OpenMP — build with it disabled, OMP_NUM_THREADS=1 is set. (2) This machine has $NCPUS CPUs. WARNING: nproc returns 1 inside this container because Singularity fakeroot restricts cgroup CPU visibility. This is a known bug. The actual CPU count is $NCPUS (detected from /proc/cpuinfo). Do NOT trust nproc — use $NCPUS for MPI -np. To verify, run: grep -c processor /proc/cpuinfo. (3) Use /wss-profiler for the profiling workflow. (4) Use /my-code for the target project."
+  "systemPrompt": "IMPORTANT — READ BEFORE DOING ANYTHING. You are inside a hot-memory profiling container. Architecture: $ARCH. This machine has $NCPUS CPUs available. CRITICAL: nproc is BROKEN inside this container — it returns 1 due to a Singularity fakeroot cgroup bug. The actual CPU count is $NCPUS. NEVER use nproc. Always use $NCPUS for MPI -np. To verify: grep -c processor /proc/cpuinfo. perf hardware counters: $PERF_OK. PAPI FP counters: $PAPI_FP_STR. PAPI load/store counters: $PAPI_MEM_STR. RULES: (1) Do NOT use OpenMP — build with it disabled. OMP_NUM_THREADS=1 is already set. (2) Use /wss-profiler for the profiling workflow. (3) Use /my-code for the target project build and run instructions."
 }
 SETTINGS
 BASHRC
