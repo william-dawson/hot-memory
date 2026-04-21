@@ -4,7 +4,7 @@
 
 A deliverable template for an HPC performance-modeling engagement. It ships a Singularity/Apptainer container that bundles:
 
-- **Profiling tools** (`perf`, PAPI, the `wss_profiler.h` C header)
+- **Profiling tools** (`perf`, PAPI, the `wss_profiler` C/Fortran library)
 - **Claude Code** (pre-configured with skills as slash commands)
 - **Skill files** — the key abstraction: markdown documents that teach Claude how to do a task or how to work with a specific codebase
 
@@ -44,7 +44,7 @@ AGENTS.md                   Developer reference for agents and contributors
 
 ## The skills system — the central abstraction
 
-Skills are markdown files placed in `~/.claude/commands/` so Claude Code can invoke them as slash commands (e.g. `/wss-profiler`, `/my-code`). The container's `%runscript` / `entrypoint.sh` copies them there automatically.
+Skills are markdown files placed in `~/.claude/commands/` so Claude Code can invoke them as slash commands (e.g. `/wss-profiler`, `/my-code`). The container's `/etc/bash.bashrc` copies them there on every interactive bash session.
 
 **Two skills are always in play:**
 
@@ -71,24 +71,22 @@ apptainer build --fakeroot hotmemory.sif hotmemory.def
 
 **Test with the built-in example:**
 ```bash
-export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
+export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
 
-singularity run --fakeroot \
-  --bind "$(pwd)/example":/workspace \
-  --bind "$(pwd)/example/my-code":/skills/my-code \
-  ./hotmemory.sif bash
+./hotmemory.sh ./example ./example/my-code
 ```
 
 Inside the container, verify the toolchain:
 ```bash
 claude --version
 perf stat echo ok
-cd /workspace && make profile && mpirun --allow-run-as-root -np 2 ./bench 2>&1 | grep '\[WSS\]'
+cd /workspace && make profile && mpirun -np 2 ./bench 2>&1 | grep '\[WSS\]'
 ```
 
-Expected WSS output (sanity check values):
+Expected WSS output (sanity check values with -np 4):
 - `stream_kernel` → ~768 MB hot, near-zero FLOP/byte
-- `compute_kernel` → ~2 MB hot, ~128 FLOP/byte
+- `compute_kernel` → ~2 MB hot (FLOP/byte depends on PAPI availability)
 
 **Publishing a release:**
 ```bash
@@ -103,24 +101,27 @@ CI (`singularity.yml`) builds and attaches `hotmemory.sif` automatically. On ord
 - **Linux only (amd64 or aarch64).** `perf` and PAPI hardware counters require a real Linux kernel. Docker Desktop for Mac runs in a VM that does not expose CPU performance counters. All testing must happen on a Linux host or HPC node.
 - **Build the SIF on the target architecture.** The CI workflow produces an amd64 SIF. For ARM (e.g. NVIDIA Grace / Neoverse V2), build directly on the Grace node: `singularity build --fakeroot hotmemory.sif hotmemory.def`.
 - **PAPI on ARM (Neoverse V2).** Run `papi_avail | grep -E 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS'` inside the container after building. If the standard presets are unavailable the header falls back gracefully (FLOPs reported as 0 with a message). See the PAPI fallback chain note in the header section below.
-- **Privileged runtime required.** Writing to `/proc/self/clear_refs` (WSS measurement) needs `CAP_SYS_RESOURCE`; `perf_event_open` may need `kernel.perf_event_paranoid=-1` set on the host. Use `--fakeroot` with Singularity.
+- **Privileged runtime required.** Writing to `/proc/self/clear_refs` (WSS measurement) needs `CAP_SYS_RESOURCE`; `perf_event_open` needs `kernel.perf_event_paranoid` ≤ 0 set on the host. Use `--fakeroot` with Singularity.
+- **Soft degradation.** The workflow works without `perf_event_paranoid` — hot-byte measurement via `/proc/clear_refs` needs only `--fakeroot`. `perf` and PAPI FLOP counts require the sysctl change. Without it, Phase 1 is unavailable and FLOPs report as 0.
 - The `bench.c` clangd diagnostics (MPI not found) are expected on Mac/without MPI headers — ignore them; the code is correct and builds inside the container.
 
 ---
 
-## The wss_profiler.h header
+## The wss_profiler library
 
-Three macros, all compile to nothing without `-DPROFILE_WSS`:
+Located in `wss_profiler/`. Three files:
 
-| Macro | Placement | Effect |
-|---|---|---|
-| `WSS_INIT()` | Once, after `MPI_Init()` | Rank-detect, PAPI init |
-| `WSS_BEGIN()` | Before kernel call | Clear `/proc/self/clear_refs`, start counters |
-| `WSS_END("name")` | After kernel call | Stop counters, read smaps, print to stderr |
+| File | Language | Purpose |
+|------|----------|---------|
+| `wss_profiler.h` | C | Macros: `WSS_INIT()`, `WSS_BEGIN()`, `WSS_END("name")` |
+| `wss_profiler_f.c` | C | Fortran-callable wrappers (handles string length, trailing spaces) |
+| `wss_profiler_mod.f90` | Fortran | Module: `wss_init()`, `wss_begin()`, `wss_end_named("name")` |
 
-Build flags for profiling: `-DPROFILE_WSS -lpapi` (wss_profiler.h is at `/usr/local/include` inside the container — no `-I` needed).
+All compile to nothing without `-DPROFILE_WSS`. Build flags for profiling: `-DPROFILE_WSS -lpapi`. All files are installed at `/usr/local/include` inside the container.
 
 The header has a PAPI fallback chain: `PAPI_DP_OPS` + `PAPI_SP_OPS` → `PAPI_FP_OPS` → FLOPs reported as 0 with a message. Always check stderr for `[WSS]` init messages when results look wrong.
+
+**PAPI only counts the main thread.** OpenMP worker thread FLOPs are NOT counted. The hot-byte measurement (smaps) IS process-wide and includes all threads. For OpenMP codes, rely on hot bytes and treat FLOP counts as lower bounds.
 
 ---
 
@@ -147,10 +148,10 @@ From: hotmemory.sif
 The most common contribution is improving `skills/wss-profiler/SKILL.md`. Key things it must contain for Claude to work correctly:
 
 - The Phase 1 perf command verbatim (including the rank-0 filtering pattern)
-- The Phase 2 step-by-step (copy header → edit → build flags → run → grep stderr)
+- The Phase 2 step-by-step for both C and Fortran codes
 - The FLOP/byte interpretation thresholds (<1 memory-bound, 1–5 borderline, >10 compute-bound)
 - The GPU memory planning reasoning (max hot set, not total allocation)
-- The caveats table (4 KB granularity, main-thread PAPI only, smaps noise)
+- The caveats (4 KB granularity, main-thread PAPI only, smaps noise)
 - The troubleshooting table
 
 The skill file is the authoritative, actionable description of the methodology. `wss-profiler/SKILL.md` is the source of truth for how profiling works.
@@ -159,11 +160,10 @@ The skill file is the authoritative, actionable description of the methodology. 
 
 ## Key gotchas
 
-- **Singularity maps `$HOME`, not `/root`.** The `%runscript` exists specifically because Singularity runs as the real user with their `$HOME`, so `/root/.claude/` from the image is inaccessible. The runscript copies settings and skill files into `$HOME/.claude/`. If Claude can't find skills inside the container, this is the first place to debug.
-- **`--allow-run-as-root` for mpirun inside containers.** OpenMPI refuses to run as root without this flag. Required in the container (where the user is root). Drop it outside.
 - **WSS measures rank 0 only.** The profiler assumes roughly symmetric workload across ranks. For load-imbalanced codes, the measurements may undercount the busiest rank.
-- **PAPI only counts the main thread.** OpenMP worker threads are not instrumented. FLOP counts will be low for heavily-threaded kernels.
+- **PAPI only counts the main thread.** OpenMP worker threads are not instrumented. FLOP counts will be low for heavily-threaded kernels. Hot-byte measurement is process-wide and accurate.
 - **smaps noise floor is a few MB.** For kernels with small working sets (<10 MB), the hot-byte count includes stack, code segment, and library pages. Interpret with caution; for large kernels it's negligible.
+
 ---
 
 ## Singularity sandbox fallback
@@ -172,23 +172,27 @@ When FUSE mounting fails (common without `user_allow_other` in `/etc/fuse.conf`)
 
 ---
 
-OpenMPI's `hwloc` topology detection sees only 1 slot inside a Singularity `--fakeroot` namespace, even when `nproc` and `/proc/cpuinfo` show the correct number of cores (e.g. 20). This causes `mpirun -np 2` to fail with "not enough slots". The fix is `OMPI_MCA_rmaps_base_oversubscribe=1` set in `%environment`, which tells OpenMPI to skip its broken slot detection. This is not true oversubscription — the cores are available, OpenMPI just can't see them through the user namespace.
+## OpenMPI inside fakeroot containers
 
-Additionally, `--fakeroot` makes the user appear as root, so OpenMPI requires `OMPI_ALLOW_RUN_AS_ROOT=1` and `OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1`. Both are set in `%environment`.
+OpenMPI's `hwloc` topology detection sees only 1 slot inside a Singularity `--fakeroot` namespace, even when `nproc` and `/proc/cpuinfo` show the correct number of cores (e.g. 20). This causes `mpirun -np 2` to fail with "not enough slots". The fix is `OMPI_MCA_rmaps_base_oversubscribe=1` set in `/etc/bash.bashrc`, which tells OpenMPI to skip its broken slot detection. This is not true oversubscription — the cores are available, OpenMPI just can't see them through the user namespace.
+
+Additionally, `--fakeroot` makes the user appear as root, so OpenMPI requires `OMPI_ALLOW_RUN_AS_ROOT=1` and `OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1`. Both are set in `/etc/bash.bashrc`.
 
 ---
 
+## Claude Code setup in the container
+
 **Installation approach**: Claude Code is installed via `npm install -g @anthropic-ai/claude-code` into `/usr/bin/claude`, not via the official install script. The install script tries to symlink into `$HOME/.local/share/claude/`, which during `--fakeroot` builds resolves to the host user's home on the host filesystem — the binary ends up outside the SIF and is inaccessible at runtime.
 
-**HOME isolation**: `%environment` sets `HOME=/tmp/claude-home` and `PATH` to system paths only. This prevents Claude from picking up the host user's broken symlinks, stale `~/.claude/settings.json`, or interfering dotfiles. The `%runscript` then populates `/tmp/claude-home/.claude/commands/` with the baked-in skills.
+**HOME isolation**: `/etc/bash.bashrc` sets `HOME=/tmp/claude-home` and `PATH` to system paths only. This prevents Claude from picking up the host user's broken symlinks, stale `~/.claude/settings.json`, or interfering dotfiles. The bashrc then populates `/tmp/claude-home/.claude/commands/` with the baked-in skills.
 
-**Why not `--no-home`?** Using `--no-home` flag causes Claude Code to hang on startup — likely a pseudo-terminal issue inside the Singularity sandbox. Setting `HOME=/tmp/claude-home` in `%environment` is cleaner and avoids this.
+**Why not `--no-home`?** Using `--no-home` flag causes Claude Code to hang on startup — likely a pseudo-terminal issue inside the Singularity sandbox. Setting `HOME=/tmp/claude-home` in `/etc/bash.bashrc` is cleaner and avoids this.
 
-**Bedrock auth**: The container is configured to use Amazon Bedrock via Claude Code's native Bedrock mode (`CLAUDE_CODE_USE_BEDROCK=1`). The user supplies `AWS_BEARER_TOKEN_BEDROCK` and `OPENAI_API_KEY` at runtime as `SINGULARITYENV_*` variables, which Singularity converts to regular env vars inside the container. These are baked into `%environment` along with `OPENAI_BASE_URL` and `AWS_REGION`.
+**Bedrock auth**: The container is configured to use Amazon Bedrock via Claude Code's native Bedrock mode (`CLAUDE_CODE_USE_BEDROCK=1`). The user supplies `AWS_BEARER_TOKEN_BEDROCK` and `OPENAI_API_KEY` at runtime as `SINGULARITYENV_*` variables, which Singularity converts to regular env vars inside the container. The Bedrock config variables (`CLAUDE_CODE_USE_BEDROCK`, `OPENAI_BASE_URL`, `AWS_REGION`) are set in `/etc/bash.bashrc`.
 
 **If modifying Claude Code setup**: 
 - Do NOT use the official install script; it will break the SIF.
-- Ensure `PATH` in `%environment` comes before any system paths that might have old Claude binaries.
+- Ensure `PATH` in `/etc/bash.bashrc` comes before any system paths that might have old Claude binaries.
 - Test with `which claude`, `claude --version`, and a simple claude prompt to verify terminal interaction works.
 - If Claude hangs on startup, it's likely `/proc` or `/dev` access — check that no restrictive container flags like `--contain` are in use.
 
