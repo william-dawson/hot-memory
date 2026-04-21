@@ -98,7 +98,14 @@ Inside the container, start Claude Code:
 claude
 ```
 
-Ask:
+On startup, load the three skills in this order:
+```
+/environment
+/wss-profiler
+/my-code
+```
+
+This gives Claude the machine capabilities, the profiling methodology, and your code's build/run instructions. Then ask:
 
 - *"Find the hotspots in my code."*
 - *"Measure the working set of stencil_apply."*
