@@ -113,7 +113,7 @@ Ask:
 
 ## Try it with the built-in example
 
-The `examples/bench/` directory contains a synthetic MPI benchmark with two kernels that split memory roughly 75/25 — `stream_kernel` is memory-bound (~96 MB hot at 4 ranks) and `compute_kernel` is compute-bound (~32 MB hot). Together they use about 128 MB per rank, but neither touches all of it — exactly the scenario where hot-set profiling is more useful than peak allocation.
+The `examples/bench/` directory contains a synthetic MPI benchmark that is **already instrumented** with WSS profiling macros — no agent work needed. It has two kernels that split memory roughly 75/25: `stream_kernel` is memory-bound (~96 MB hot at 4 ranks) and `compute_kernel` is compute-bound (~32 MB hot). This is a quick sanity check that everything works.
 
 ```bash
 ./hotmemory.sh ./examples/bench ./examples/bench/my-code
@@ -126,15 +126,14 @@ claude
 ```
 
 Try asking:
-- *"Find the hotspots in this code."*
-- *"Measure the working set of both kernels."*
+- *"Build with profiling and measure the working set of both kernels."*
 - *"Would this fit on a GPU with 4 GB of memory?"*
 
 ---
 
-## Try it with CloverLeaf
+## Try it with CloverLeaf (agent-driven instrumentation)
 
-For a more realistic test, the `examples/cloverleaf/` directory contains a skill and fetch script for [CloverLeaf](https://github.com/UK-MAC/CloverLeaf_ref), a Lagrangian-Eulerian hydrodynamics mini-app with 9 distinct kernels per timestep — each with different memory access patterns.
+This is the real test of the workflow. CloverLeaf is a Lagrangian-Eulerian hydrodynamics mini-app with 9 distinct kernels per timestep — it is **not pre-instrumented**. Claude reads both skills, figures out how to instrument the Fortran code, builds, runs, and reports per-kernel hot sets autonomously.
 
 ```bash
 ./hotmemory.sh ./examples/cloverleaf ./examples/cloverleaf/my-code
