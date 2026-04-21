@@ -38,6 +38,15 @@ From: ubuntu:24.04
     npm install -g @anthropic-ai/claude-code
     rm -rf /var/lib/apt/lists/*
 
+    # Override nproc — the real one returns 1 inside fakeroot namespaces
+    # because cgroups restrict the CPU count. /proc/cpuinfo is accurate.
+    mv /usr/bin/nproc /usr/bin/nproc.real
+    cat > /usr/bin/nproc << 'NPROC'
+#!/bin/bash
+grep -c processor /proc/cpuinfo
+NPROC
+    chmod +x /usr/bin/nproc
+
     # Pre-compile the WSS profiler library (C wrapper + Fortran module)
     # so users just link with -lwss_profiler -lpapi, no source copying needed.
     cd /usr/local/include
