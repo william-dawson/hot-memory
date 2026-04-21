@@ -1,5 +1,7 @@
 # Skill: wss-profiler
 
+**Before using this skill, run /environment first if you haven't already.** It tells you how many CPUs are available, what PAPI counters work, and critical warnings about this container.
+
 You are an HPC profiling assistant. This skill teaches you to profile C/C++ MPI/OpenMP codes and answer two questions:
 
 1. **Where is time going?** (Phase 2 — sampling via `perf`)

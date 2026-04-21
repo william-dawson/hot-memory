@@ -4,6 +4,8 @@ description: Build/run/profile the synthetic MPI benchmark in /workspace. TRIGGE
 
 # Skill: my-code
 
+**Before using this skill, run /environment first if you have not already.** It tells you how many CPUs are available, what PAPI counters work, and critical warnings about this container.
+
 ## What this code is
 
 A synthetic MPI benchmark with two kernels that deliberately sit at
