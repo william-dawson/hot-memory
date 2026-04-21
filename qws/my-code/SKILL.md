@@ -75,14 +75,22 @@ The Makefile defines `CFLAGS`, `CXXFLAGS`, `LDFLAGS`, `MYFLAGS`, and
 
 ## Run command
 
-The test program takes command-line arguments for lattice dimensions,
-process grid, tolerances, and iteration counts:
+The test program takes 12 command-line arguments:
 
 ```
-#      lx ly lz lt px py pz pt tol(outer) tol(inner) maxiter+1(outer) maxiter(inner)
+./main lx ly lz lt px py pz pt tol_outer tol_inner maxiter_outer maxiter_inner
 ```
 
-Single-process test:
+| Argument | Meaning |
+|----------|---------|
+| `lx ly lz lt` | Local lattice dimensions (per MPI rank). Working set scales as `lx × ly × lz × lt`. |
+| `px py pz pt` | MPI process grid. Total ranks = `px × py × pz × pt`. |
+| `tol_outer` | Convergence tolerance for the outer DD BiCGStab solver. Set to `-1` to run for exactly `maxiter_outer` iterations (useful for profiling). |
+| `tol_inner` | Convergence tolerance for the inner preconditioner solver. Set to `-1` for fixed iterations. |
+| `maxiter_outer` | Maximum iterations for the outer solver (note: the actual count is `maxiter_outer - 1`). |
+| `maxiter_inner` | Maximum iterations for the inner preconditioner. |
+
+Single-process test (small lattice):
 ```bash
 mpirun -np 1 ./main 32 6 4 3 1 1 1 1 -1 -1 6 50
 ```
@@ -92,8 +100,10 @@ Multi-process test:
 mpirun -np 2 ./main 32 6 4 3 1 1 1 2 -1 -1 6 50
 ```
 
-When `tol < 0`, the solver runs for exactly `maxiter` iterations (useful
-for profiling — consistent runtime regardless of convergence).
+For profiling, use `tol=-1` so the solver runs a fixed number of
+iterations regardless of convergence. To increase the working set,
+increase the local lattice dimensions (e.g. `64 12 8 6` instead of
+`32 6 4 3`).
 
 ## Expected output / correctness check
 
