@@ -199,7 +199,67 @@ When built without `-DPROFILE_WSS`, all macros are empty — zero overhead, no c
    WSS_INIT();   // add this line
    ```
 
-3. **Wrap each target kernel** at its call site (not inside the function definition):
+3. **Choose the right instrumentation granularity.** This is the most
+   important decision. If you instrument too coarsely (e.g. wrapping an
+   entire solver call), you'll measure the combined working set of many
+   sub-kernels and learn nothing useful — the result will be close to
+   peak allocation. If you instrument too finely (e.g. individual vector
+   operations), you'll get noise.
+
+   **The goal is to find the level where different *phases* of the
+   computation have meaningfully different working sets.** Follow this
+   process:
+
+   a. **Read the source code** to understand the structure. Identify the
+      main loop or solver iteration. Inside that loop, identify the
+      distinct computational phases — each phase typically calls different
+      functions or touches different arrays.
+
+   b. **Start coarse, then refine.** First instrument the entire main
+      loop body (one iteration). If the hot set is close to peak
+      allocation, that means the loop touches everything — you need to
+      go deeper. Break it into phases and instrument each separately.
+
+   c. **Look for phase boundaries.** Good places to put WSS_BEGIN/END
+      are between distinct computational steps: before/after a matrix
+      multiply, before/after a halo exchange, before/after a
+      preconditioner solve. Each of these may touch very different data.
+
+   d. **For iterative solvers** (CG, BiCGStab, etc.), the interesting
+      granularity is usually the individual operations *within* one
+      solver iteration: the matrix-vector product, the preconditioner
+      application, the dot products, the vector updates. These have
+      very different memory access patterns.
+
+   e. **If perf/timing data doesn't give enough detail**, read the code
+      to understand which arrays each function touches. The source tells
+      you what the working set *should* be; the measurement confirms it.
+      If the measurement is much larger than expected, you're probably
+      measuring too coarsely.
+
+   f. **Name your measurements descriptively** so the results table makes
+      sense: `"deo_in"`, `"preconditioner"`, `"allreduce"`, not `"step1"`.
+
+   Example — instrumenting a BiCGStab solver iteration:
+   ```c
+   WSS_BEGIN();
+   matvec(A, p, Ap);           // matrix-vector product
+   WSS_END("matvec");
+
+   WSS_BEGIN();
+   precondition(M, r, z);      // preconditioner
+   WSS_END("preconditioner");
+
+   WSS_BEGIN();
+   dot_product(r, z, &rz);     // reduction
+   WSS_END("dot_product");
+
+   WSS_BEGIN();
+   axpy(alpha, p, x);          // vector update
+   WSS_END("vector_update");
+   ```
+
+   Wrap each target kernel at its call site (not inside the function definition):
    ```c
    WSS_BEGIN();
    stencil_apply(grid, nx, ny, nz);
