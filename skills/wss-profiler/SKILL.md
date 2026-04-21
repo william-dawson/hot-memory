@@ -270,6 +270,19 @@ When built without `-DPROFILE_WSS`, all macros are empty — zero overhead, no c
    f. **Name your measurements descriptively** so the results table makes
       sense: `"deo_in"`, `"preconditioner"`, `"allreduce"`, not `"step1"`.
 
+   g. **NEVER nest WSS_BEGIN/WSS_END calls.** The profiler uses a single
+      global PAPI eventset and a single `/proc/self/clear_refs` state.
+      Nesting will corrupt both the PAPI counters and the hot-byte
+      measurement. If you need to measure at multiple levels of a call
+      hierarchy (e.g. the whole solver AND individual kernels inside it),
+      do separate profiling runs — one run per level. For example:
+      - Run 1: instrument at the solver level (one BEGIN/END around the
+        entire solver call)
+      - Run 2: instrument at the kernel level (BEGIN/END around each
+        individual operation inside the solver)
+      Never put BEGIN/END around both the solver and its sub-operations
+      in the same run.
+
    Example — instrumenting a BiCGStab solver iteration:
    ```c
    WSS_BEGIN();
@@ -535,3 +548,4 @@ macros, PAPI, or any instrumentation. It describes only the user's code.
 | FLOP count is 0 | PAPI events not added, or hardware counters not exposed by the host (VM/container) | Check PAPI init messages in stderr. Hot-byte measurement and GPU memory planning still work without FLOP counts — report the hot MB and note that FLOP/byte is unavailable. For the full workflow, `perf_event_paranoid` must be ≤ 1. |
 | Hot MB seems too high | smaps noise (stack, libs) | For large kernels (>50 MB), noise is <5%. For small kernels, interpret with caution. |
 | Hot MB is the same across kernels | clear_refs not working | Verify `--privileged`; check for `[WSS] cannot open` error |
+| PAPI_stop fails or some measurements missing | Nested WSS_BEGIN/WSS_END calls | The profiler cannot be nested — WSS_BEGIN clears the page reference bits and restarts PAPI, destroying any outer measurement. Instrument at one level of the call hierarchy per run. Do separate runs for different levels. |
