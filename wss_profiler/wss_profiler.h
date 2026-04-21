@@ -45,6 +45,7 @@ static int    _wss_nfp_events = 0;   /* how many FP counters are live */
 static int    _wss_nmem_events = 0;  /* how many load/store counters are live */
 static int    _wss_nevents    = 0;   /* total counters: FP + mem */
 static int    _wss_papi_ok    = 0;   /* PAPI library initialized */
+static int    _wss_active     = 0;   /* 1 between WSS_BEGIN and WSS_END */
 
 /* ── internal helpers (defined inline to avoid duplicate-symbol errors) ─── */
 
@@ -153,9 +154,18 @@ static inline long long _wss_read_referenced_kb(void)
 #define WSS_BEGIN() \
     do { \
         if (_wss_rank == 0) { \
-            _wss_clear_refs(); \
-            if (_wss_eventset != PAPI_NULL) \
-                PAPI_start(_wss_eventset); \
+            if (_wss_active) { \
+                fprintf(stderr, \
+                        "[WSS] ERROR: WSS_BEGIN() called while already active" \
+                        " — nesting is not supported. End the current" \
+                        " measurement with WSS_END() before starting a" \
+                        " new one.\n"); \
+            } else { \
+                _wss_active = 1; \
+                _wss_clear_refs(); \
+                if (_wss_eventset != PAPI_NULL) \
+                    PAPI_start(_wss_eventset); \
+            } \
         } \
     } while (0)
 
@@ -172,6 +182,12 @@ static inline long long _wss_read_referenced_kb(void)
 #define WSS_END(name) \
     do { \
         if (_wss_rank == 0) { \
+            if (!_wss_active) { \
+                fprintf(stderr, \
+                        "[WSS] ERROR: WSS_END(\"%s\") called without a" \
+                        " matching WSS_BEGIN().\n", (name)); \
+            } else { \
+            _wss_active = 0; \
             long long _wss_vals[8] = {0}; \
             if (_wss_eventset != PAPI_NULL) \
                 PAPI_stop(_wss_eventset, _wss_vals); \
@@ -200,6 +216,7 @@ static inline long long _wss_read_referenced_kb(void)
                     "  %8.3f GFLOP  %6.2f FLOP/B-hot  %6.2f FLOP/B-acc\n", \
                     (name), _wss_hot_mb, _wss_accessed_mb, \
                     _wss_gflop, _wss_fpb_hot, _wss_fpb_acc); \
+            } \
         } \
     } while (0)
 
