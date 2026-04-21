@@ -133,11 +133,4 @@ For a more realistic test, the `cloverleaf/` directory contains a skill and fetc
 ./hotmemory.sh ./cloverleaf ./cloverleaf/my-code
 ```
 
-Inside the container:
-
-```bash
-bash fetch_and_build.sh
-claude
-```
-
-This is where the methodology shines: total allocation may be large, but individual kernels touch only subsets of the data. The per-kernel hot set measurements tell you exactly what a GPU needs.
+The skill file includes knowledge of using the fetch script to grab the code automatically. 
