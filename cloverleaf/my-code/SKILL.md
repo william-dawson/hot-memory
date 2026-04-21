@@ -73,12 +73,11 @@ command. The final link is done by `mpif90`.
 - **To link an additional library**: add `-l` flags to the `mpif90` link
   command in the Makefile. The link step is in the `clover_leaf:` target —
   append before the `-o clover_leaf` at the end.
-- **To use a Fortran module from an external library**: the `.mod` file
-  must be findable by `mpif90`. Use `OPTIONS="-I/path/to/mod/files"` to
-  add the include path. For example, modules installed at
-  `/usr/local/include` require `OPTIONS="-I/usr/local/include"`. Then add
-  `use module_name` to the relevant `.f90` source file and link the
-  library in the link step.
+- **To use a Fortran module from an external library**: `mpif90` does not
+  search system include paths for `.mod` files by default. You must pass
+  `-I/path/to/mod/files` via `OPTIONS` so the compiler can find them.
+  Then add `use module_name` to the relevant `.f90` source file and link
+  the library in the link step.
 - **To include a new C header**: add `#include "header.h"` to the relevant
   `kernels/*_c.c` file; if it's on a system path no `-I` flag is needed.
 

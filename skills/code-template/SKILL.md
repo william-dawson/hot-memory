@@ -53,7 +53,8 @@ For C/C++ projects, describe how to:
 - Include a new header file
 
 For Fortran projects, describe how to:
-- Use a new Fortran module (where `.mod` files are found)
+- Use a new Fortran module (`mpif90` does not search system include paths
+  for `.mod` files by default — you need `-I/path/to/mod/files`)
 - Link an additional static or shared library
 - Add extra compiler/linker flags
 
