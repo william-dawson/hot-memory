@@ -57,7 +57,6 @@ cp /skills/wss-profiler/SKILL.md "$HOME/.claude/commands/wss-profiler.md" 2>/dev
 if [ -f /skills/my-code/SKILL.md ]; then
     cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
 fi
-cd /workspace
 BASHRC
 
 %runscript
