@@ -6,10 +6,11 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    permissions:
-      contents: write
     strategy:
       matrix:
         include:
