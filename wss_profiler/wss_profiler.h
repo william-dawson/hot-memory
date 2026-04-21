@@ -1,16 +1,19 @@
 /*
- * wss_profiler.h — Per-kernel working set size (WSS) and FLOP profiler.
+ * wss_profiler.h — Per-kernel working set size (WSS), FLOP, and memory
+ *                  traffic profiler.
  *
  * Usage:
- *   1. Copy this header into your source directory.
- *   2. #include "wss_profiler.h" in the file containing main().
- *   3. Call WSS_INIT() once after MPI_Init().
- *   4. Wrap each kernel call with WSS_BEGIN() / WSS_END("kernel_name").
- *   5. Build with: -DPROFILE_WSS -lpapi
+ *   1. #include "wss_profiler.h" in the file containing main().
+ *   2. Call WSS_INIT() once after MPI_Init().
+ *   3. Wrap each kernel call with WSS_BEGIN() / WSS_END("kernel_name").
+ *   4. Build with: -DPROFILE_WSS -lpapi
  *      (Without -DPROFILE_WSS, all macros compile away to nothing.)
  *
  * Output (to stderr, rank 0 only):
- *   [WSS] kernel_name       512.0 MB hot     0.480 GFLOP     0.98 FLOP/byte
+ *   [WSS] kernel_name     512.0 MB hot   1024.0 MB accessed   0.480 GFLOP   0.98 FLOP/byte-hot   0.47 FLOP/byte-accessed
+ *
+ *   "MB accessed" and "FLOP/byte-accessed" are only reported when PAPI
+ *   load/store counters are available. Otherwise they show as 0.
  *
  * Requirements:
  *   - Linux amd64 or aarch64 (uses /proc/self/clear_refs and /proc/self/smaps)
@@ -36,10 +39,12 @@
 
 /* ── internal state ─────────────────────────────────────────────────────── */
 
-static int    _wss_rank     = -1;
-static int    _wss_eventset = PAPI_NULL;
-static int    _wss_nevents  = 0;   /* how many counters are live */
-static int    _wss_papi_ok  = 0;   /* PAPI library initialized */
+static int    _wss_rank       = -1;
+static int    _wss_eventset   = PAPI_NULL;
+static int    _wss_nfp_events = 0;   /* how many FP counters are live */
+static int    _wss_nmem_events = 0;  /* how many load/store counters are live */
+static int    _wss_nevents    = 0;   /* total counters: FP + mem */
+static int    _wss_papi_ok    = 0;   /* PAPI library initialized */
 
 /* ── internal helpers (defined inline to avoid duplicate-symbol errors) ─── */
 
@@ -58,24 +63,39 @@ static inline void _wss_papi_init(void)
         return;
     }
 
+    /* ── FP counters ── */
     /* Prefer separate DP/SP counters; fall back to combined FP counter. */
     int has_dp = (PAPI_add_event(_wss_eventset, PAPI_DP_OPS) == PAPI_OK);
     int has_sp = (PAPI_add_event(_wss_eventset, PAPI_SP_OPS) == PAPI_OK);
 
     if (!has_dp && !has_sp) {
-        /* Some microarchitectures only expose PAPI_FP_OPS. */
         if (PAPI_add_event(_wss_eventset, PAPI_FP_OPS) == PAPI_OK) {
-            _wss_nevents = 1;
+            _wss_nfp_events = 1;
             fprintf(stderr,
                     "[WSS] Using PAPI_FP_OPS (DP_OPS/SP_OPS unavailable)\n");
         } else {
             fprintf(stderr,
                     "[WSS] No FP PAPI events available — FLOPs will be 0\n");
-            PAPI_destroy_eventset(&_wss_eventset);
-            _wss_eventset = PAPI_NULL;
         }
     } else {
-        _wss_nevents = has_dp + has_sp;
+        _wss_nfp_events = has_dp + has_sp;
+    }
+
+    /* ── Load/Store counters for total bytes accessed ── */
+    int has_ld = (PAPI_add_event(_wss_eventset, PAPI_LD_INS) == PAPI_OK);
+    int has_sr = (PAPI_add_event(_wss_eventset, PAPI_SR_INS) == PAPI_OK);
+    _wss_nmem_events = has_ld + has_sr;
+
+    if (_wss_nmem_events == 0) {
+        fprintf(stderr,
+                "[WSS] No load/store PAPI events — total bytes accessed will be 0\n");
+    }
+
+    _wss_nevents = _wss_nfp_events + _wss_nmem_events;
+
+    if (_wss_nevents == 0) {
+        PAPI_destroy_eventset(&_wss_eventset);
+        _wss_eventset = PAPI_NULL;
     }
 }
 
@@ -87,7 +107,6 @@ static inline void _wss_clear_refs(void)
                         "[WSS] need --privileged or CAP_SYS_RESOURCE\n");
         return;
     }
-    /* 1 = clear Referenced bits for all pages */
     fputs("1\n", f);
     fclose(f);
 }
@@ -145,27 +164,42 @@ static inline long long _wss_read_referenced_kb(void)
  * Stops counters, reads /proc/self/smaps, prints the report line.
  *
  * name: string literal identifying this kernel in the output.
+ *
+ * Counter layout in _wss_vals[]:
+ *   [0..nfp-1]  = FP counters (DP_OPS, SP_OPS, or FP_OPS)
+ *   [nfp..nfp+nmem-1] = memory counters (LD_INS, SR_INS)
  */
 #define WSS_END(name) \
     do { \
         if (_wss_rank == 0) { \
-            long long _wss_vals[4] = {0, 0, 0, 0}; \
+            long long _wss_vals[8] = {0}; \
             if (_wss_eventset != PAPI_NULL) \
                 PAPI_stop(_wss_eventset, _wss_vals); \
             long long _wss_ref_kb  = _wss_read_referenced_kb(); \
             long long _wss_flops   = 0; \
-            for (int _i = 0; _i < _wss_nevents; _i++) \
+            for (int _i = 0; _i < _wss_nfp_events; _i++) \
                 _wss_flops += _wss_vals[_i]; \
+            long long _wss_memops  = 0; \
+            for (int _i = _wss_nfp_events; \
+                 _i < _wss_nfp_events + _wss_nmem_events; _i++) \
+                _wss_memops += _wss_vals[_i]; \
             double _wss_hot_mb     = (_wss_ref_kb >= 0) \
                                      ? _wss_ref_kb / 1024.0 : 0.0; \
             double _wss_gflop      = _wss_flops / 1.0e9; \
-            double _wss_fpb        = (_wss_ref_kb > 0) \
+            /* Estimate total bytes accessed: each LD/SR is ~8 bytes (double) */ \
+            double _wss_accessed_mb = (_wss_memops * 8.0) / (1024.0 * 1024.0); \
+            double _wss_fpb_hot    = (_wss_ref_kb > 0) \
                                      ? (double)_wss_flops \
                                        / ((double)_wss_ref_kb * 1024.0) \
                                      : 0.0; \
+            double _wss_fpb_acc    = (_wss_accessed_mb > 0.0) \
+                                     ? _wss_gflop * 1024.0 / _wss_accessed_mb \
+                                     : 0.0; \
             fprintf(stderr, \
-                    "[WSS] %-32s %8.1f MB hot  %8.3f GFLOP  %8.2f FLOP/byte\n",\
-                    (name), _wss_hot_mb, _wss_gflop, _wss_fpb); \
+                    "[WSS] %-24s %8.1f MB hot  %8.1f MB accessed" \
+                    "  %8.3f GFLOP  %6.2f FLOP/B-hot  %6.2f FLOP/B-acc\n", \
+                    (name), _wss_hot_mb, _wss_accessed_mb, \
+                    _wss_gflop, _wss_fpb_hot, _wss_fpb_acc); \
         } \
     } while (0)
 

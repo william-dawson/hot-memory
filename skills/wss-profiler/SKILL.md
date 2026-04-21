@@ -212,28 +212,43 @@ ships a static library (`libwss_profiler.a`) and Fortran module file
 
 ```
 [WSS] Profiling active on rank 0
-[WSS] stencil_apply                   512.0 MB hot     0.480 GFLOP     0.98 FLOP/byte
-[WSS] fft_forward                     128.0 MB hot     0.190 GFLOP     1.57 FLOP/byte
+[WSS] stencil_apply              512.0 MB hot   1024.0 MB accessed   0.480 GFLOP   0.98 FLOP/B-hot   0.47 FLOP/B-acc
+[WSS] fft_forward                128.0 MB hot    256.0 MB accessed   0.190 GFLOP   1.57 FLOP/B-hot   0.74 FLOP/B-acc
 ```
+
+Fields:
+- **MB hot**: unique pages touched (from `/proc/self/smaps`) — GPU memory needed
+- **MB accessed**: total bytes loaded + stored (from PAPI `LD_INS` + `SR_INS` × 8 bytes) — memory traffic. Shows 0 if counters unavailable.
+- **GFLOP**: floating-point operations (from PAPI)
+- **FLOP/B-hot**: FLOPs per byte of working set — "how much compute per byte the kernel cares about"
+- **FLOP/B-acc**: FLOPs per byte of traffic — closer to roofline arithmetic intensity
+
+When MB accessed > MB hot, the kernel revisits data (reuse). When they're
+close, the kernel streams through data once. The ratio `accessed / hot` is
+the average reuse factor.
 
 ### How to present results
 
-Always include the Phase 0 peak memory as context. Present a table
-combining peak allocation, Phase 1 timing, and Phase 2 measurements:
+Always include the Phase 0 peak memory as context. Present all available
+metrics in a single table:
 
 ```
 Peak memory (rank 0): 3072 MB
 
-| Kernel           | % Time | Hot MB | % of Peak | GFLOP | FLOP/byte | Assessment   |
-|------------------|--------|--------|-----------|-------|-----------|--------------|
-| stencil_apply    |  42.3% |    512 |     16.7% |  0.48 |      0.98 | memory-bound |
-| fft_forward      |  28.1% |    128 |      4.2% |  0.19 |      1.57 | borderline   |
+| Kernel        | % Time | Hot MB | % of Peak | Accessed MB | Reuse | GFLOP | FLOP/B-hot | FLOP/B-acc | Assessment   |
+|---------------|--------|--------|-----------|-------------|-------|-------|------------|------------|--------------|
+| stencil_apply |  42.3% |    512 |     16.7% |        1024 |  2.0x |  0.48 |       0.98 |       0.47 | memory-bound |
+| fft_forward   |  28.1% |    128 |      4.2% |         256 |  2.0x |  0.19 |       1.57 |       0.74 | borderline   |
 ```
 
-The "% of Peak" column is the key insight — it shows how much of the
-total allocation each kernel actually uses. If the heaviest kernel uses
-only 17% of peak, the code needs far less GPU memory than a naive
-estimate would suggest.
+Columns that depend on unavailable PAPI counters (FLOP, accessed MB) should
+be shown as "n/a" rather than 0. The hot MB and % of Peak columns always
+work.
+
+The key insights to highlight for the user:
+- **% of Peak** shows how much of total allocation each kernel actually needs
+- **Reuse** (accessed / hot) shows whether the kernel streams or revisits data
+- **FLOP/B-acc** is the closest to roofline arithmetic intensity
 
 **FLOP/byte interpretation:**
 - < 1: kernel sweeps data with little reuse — almost certainly memory-bandwidth-bound
