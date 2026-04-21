@@ -105,6 +105,11 @@ iterations regardless of convergence. To increase the working set,
 increase the local lattice dimensions (e.g. `64 12 8 6` instead of
 `32 6 4 3`).
 
+For quick benchmarks where you just need the code to run and converge
+fast, use a loose tolerance such as `1e-4` for both `tol_outer` and
+`tol_inner`. This cuts iteration count dramatically compared to the
+default tight tolerances used in production.
+
 ## Expected output / correctness check
 
 The program prints norm values and solver timing. Reference outputs are
