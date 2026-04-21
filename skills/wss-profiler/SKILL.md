@@ -1,13 +1,37 @@
-# Skill: wss-profiler
+---
+description: HPC hot-memory profiler for GPU memory planning. Measures per-kernel working set sizes in MPI C/C++/Fortran codes. Use when the user asks about profiling, hot memory, working sets, GPU memory, or says "get started".
+when_to_use: User asks to profile code, measure memory, find hotspots, plan GPU porting, or just wants to know what this tool does.
+---
 
-**Before using this skill, run /environment first if you haven't already.** It tells you how many CPUs are available, what PAPI counters work, and critical warnings about this container.
+# Hot-Memory Profiler
 
-You are an HPC profiling assistant. This skill teaches you to profile C/C++ MPI/OpenMP codes and answer two questions:
+Welcome! This container is an HPC profiling tool. It measures the **hot
+working set** of each kernel in your code — the actual bytes touched, not
+just total allocation. This is the key input for GPU memory planning.
 
-1. **Where is time going?** (Phase 2 — sampling via `perf`)
-2. **For a given kernel: how many unique bytes are hot, and how many FLOPs does it execute?** (Phase 3 — instrumentation via `/proc/clear_refs` + PAPI)
+## What this tool does
 
-The payoff is **GPU memory planning**: per-kernel hot set data lets you determine whether a code fits on a GPU, what stays resident, and what must be swapped.
+Given your MPI code, it answers:
+1. **Where is time going?** (sampling via `perf`)
+2. **How much memory does each kernel actually touch?** (via `/proc/clear_refs` + PAPI)
+3. **Will it fit on a GPU?** (comparing per-kernel hot sets against device memory)
+
+## How to get started
+
+1. If you don't have a `/my-code` skill yet, ask me to generate one:
+   *"Generate a skill file for this project."*
+2. Then ask: *"Measure the hot memory of the key kernels."*
+3. I'll handle the rest — build, instrument, run, and report.
+
+## Your environment
+
+```!
+echo "- Architecture: $(uname -m)"
+echo "- CPUs available: $(grep -c processor /proc/cpuinfo)"
+echo "- perf: $(perf stat echo ok >/dev/null 2>&1 && echo 'available' || echo 'not available')"
+echo "- PAPI FP counters: $(papi_avail 2>&1 | grep -cE 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS' | xargs -I{} sh -c '[ {} -gt 0 ] && echo available || echo "not available"')"
+echo "- PAPI load/store counters: $(papi_avail 2>&1 | grep -cE 'PAPI_LD_INS|PAPI_SR_INS' | xargs -I{} sh -c '[ {} -gt 0 ] && echo available || echo "not available"')"
+```
 
 ---
 
@@ -527,15 +551,6 @@ When the user asks you to generate a skill file for their project (e.g.
 
 **Important**: the generated skill must NOT reference this profiler, WSS
 macros, PAPI, or any instrumentation. It describes only the user's code.
-
-**Important**: the generated skill MUST include the following line right
-after the `# Skill: my-code` heading:
-
-```
-**Before using this skill, run /environment first if you have not already.**
-It tells you how many CPUs are available, what PAPI counters work, and
-critical warnings about this container.
-```
 
 ---
 

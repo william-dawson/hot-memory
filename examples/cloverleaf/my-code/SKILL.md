@@ -4,8 +4,6 @@ description: Build/run/profile CloverLeaf in /workspace. TRIGGER when: user asks
 
 # Skill: my-code
 
-**Before using this skill, run /environment first if you have not already.** It tells you how many CPUs are available, what PAPI counters work, and critical warnings about this container.
-
 ## What this code is
 
 CloverLeaf is a Lagrangian-Eulerian hydrodynamics mini-app from the UK

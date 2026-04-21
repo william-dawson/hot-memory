@@ -4,8 +4,6 @@ description: Build/run/profile the code in this workspace. TRIGGER when: user as
 
 # Skill: my-code
 
-**Before using this skill, run /environment first if you haven't already.** It tells you how many CPUs are available, what PAPI counters work, and critical warnings about this container.
-
 Copy this file to your code's skills directory as SKILL.md and fill in
 every section below. Claude reads this alongside wss-profiler/SKILL.md
 to build, run, and profile your code without needing to guess.

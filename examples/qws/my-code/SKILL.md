@@ -4,8 +4,6 @@ description: Build/run/profile QWS (lattice QCD) in /workspace. TRIGGER when: us
 
 # Skill: my-code
 
-**Before using this skill, run /environment first if you have not already.** It tells you how many CPUs are available, what PAPI counters work, and critical warnings about this container.
-
 ## What this code is
 
 QWS (QCD Wide SIMD) is a lattice quantum chromodynamics simulation library.
