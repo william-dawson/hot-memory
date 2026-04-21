@@ -8,7 +8,6 @@ From: ubuntu:24.04
 
 %environment
     export DEBIAN_FRONTEND=noninteractive
-    export PATH="/root/.local/bin:$PATH"
 
 %post
     export DEBIAN_FRONTEND=noninteractive
@@ -23,11 +22,13 @@ From: ubuntu:24.04
     && ln -sf "$PERF_BIN" /usr/local/bin/perf \
     && rm -rf /var/lib/apt/lists/*
 
-    # Claude Code
-    curl -fsSL https://claude.ai/install.sh | bash
+    # Claude Code — install and force HOME=/root so all config lands in /root
+    HOME=/root curl -fsSL https://claude.ai/install.sh | bash
 
-    # The Claude installer may create or reset /root/.claude — write our
-    # config last so it is not overwritten.
+    # Symlink claude into a system path so it works regardless of $HOME at runtime
+    ln -sf /root/.local/bin/claude /usr/local/bin/claude
+
+    # Write our config after the installer, using absolute paths.
     mkdir -p /root/.claude/commands
 
     # API key helper — reads ANTHROPIC_API_KEY from the environment at runtime
