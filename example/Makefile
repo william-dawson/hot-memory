@@ -14,7 +14,7 @@ bench: bench.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 run: bench
-	mpirun --allow-run-as-root -np 2 ./bench 2>&1
+	mpirun -np 4 ./bench 2>&1
 
 clean:
 	rm -f bench

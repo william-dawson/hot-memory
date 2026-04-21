@@ -10,8 +10,9 @@ A synthetic MPI+OpenMP benchmark with two kernels that deliberately sit at
 opposite ends of the memory-vs-compute spectrum. Used to validate the
 wss-profiler skill end-to-end. Runs in a few seconds on any hardware.
 
-2 MPI ranks, OpenMP within each rank (thread count follows `OMP_NUM_THREADS`
-or defaults to the number of cores).
+The stream arrays are distributed across MPI ranks (strong scaling), so
+each rank's working set shrinks as you add more processes. The compute
+kernel is per-rank (weak scaling) — each rank works on its own 2 MB array.
 
 ## Source layout
 
@@ -23,12 +24,12 @@ or defaults to the number of cores).
 
 Key functions:
 
-- `main()` — MPI init, allocation, calls both kernels, prints checksum
-- `stream_kernel(a, b, c, n)` — writes `c[i] = a[i] + b[i]` over 32 M doubles;
-  three arrays of 256 MB each (768 MB total working set); one FLOP per three
-  reads — memory-bandwidth-bound
-- `compute_kernel(x, n, iters)` — 256 K doubles, 1000 multiply-add iterations
-  per element; ~256 M FLOPs on a 2 MB working set — compute-bound
+- `main()` — MPI init, allocation, distributes work, calls both kernels
+- `stream_kernel(a, b, c, n)` — writes `c[i] = a[i] + b[i]` over the local
+  portion of 128 M doubles total; three arrays split across ranks; with 4 ranks
+  each rank touches ~96 MB per array (~288 MB total) — memory-bandwidth-bound
+- `compute_kernel(x, n, iters)` — 256 K doubles per rank, 1000 multiply-add
+  iterations per element; ~256 M FLOPs on a 2 MB working set — compute-bound
 
 ## Build command
 
@@ -50,11 +51,8 @@ No manual flag injection is needed.
 ## Run command
 
 ```bash
-mpirun --allow-run-as-root -np 2 ./bench
+mpirun -np 4 ./bench
 ```
-
-`--allow-run-as-root` is required when running as root inside the profiling
-container. Outside a container, drop that flag.
 
 Successful run prints one line to stdout and exits 0:
 ```
@@ -66,7 +64,7 @@ WSS output (when profiling) goes to stderr.
 ## Expected output / correctness check
 
 Exit code 0 and a line matching `checksum:` on stdout. The exact checksum
-value is deterministic for a given build.
+value depends on the number of ranks.
 
 ## Notes for the profiler
 
@@ -75,9 +73,12 @@ value is deterministic for a given build.
 - The WSS macros are already present in bench.c and compiled away unless
   `-DPROFILE_WSS` is set. Claude does not need to add them; just rebuild
   with `make profile` to activate them.
-- `stream_kernel` is expected to show ~768 MB hot and near-zero FLOP/byte.
-- `compute_kernel` is expected to show ~2 MB hot and ~128 FLOP/byte.
-  These make a useful sanity check that the profiler is working correctly.
-- Arrays `a`, `b`, `c` are pre-initialised before the kernel runs, so all
-  pages are already mapped — the hot-byte count reflects only the kernel's
-  true working set, not first-touch overhead.
+- `stream_kernel` hot MB scales with rank count: ~768 MB at -np 4, ~384 MB
+  at -np 8, etc. (3 arrays × STREAM_N_TOTAL / nprocs × 8 bytes).
+- `compute_kernel` is expected to show ~2 MB hot and ~128 FLOP/byte
+  regardless of rank count.
+- There is an `MPI_Allreduce` after each kernel to add real communication
+  overhead — this will show up in perf profiling as MPI library time.
+- Arrays are pre-initialised before the kernel runs, so all pages are
+  already mapped — the hot-byte count reflects only the kernel's true
+  working set, not first-touch overhead.
