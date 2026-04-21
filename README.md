@@ -50,7 +50,8 @@ The template asks for your source layout, build command, run command, and any no
 **3. Run**
 
 ```bash
-export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
+export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
 
 singularity run --bind /path/to/your/code:/workspace \
                 --bind /path/to/my-code-skill:/skills/my-code \
@@ -99,7 +100,8 @@ The `example/` directory contains a synthetic benchmark and a fully filled-in
 code skill so you can try the whole flow immediately without writing any code.
 
 ```bash
-export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
+export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
 
 singularity run --bind "$(pwd)/example":/workspace \
                 --bind "$(pwd)/example/my-code":/skills/my-code \

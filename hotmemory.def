@@ -8,6 +8,9 @@ From: ubuntu:24.04
 
 %environment
     export DEBIAN_FRONTEND=noninteractive
+    export CLAUDE_CODE_USE_BEDROCK=1
+    export AWS_REGION="us-east-1"
+    export OPENAI_BASE_URL="https://bedrock-mantle.us-east-1.api.aws/v1"
 
 %post
     export DEBIAN_FRONTEND=noninteractive
@@ -32,12 +35,8 @@ From: ubuntu:24.04
 
 %runscript
     # Singularity maps the real user's $HOME, not /root.
-    # Copy skills and config from the baked-in /skills/ source (not /root/.claude/
-    # which may have been overwritten by the Claude installer at build time).
+    # Copy skills from the baked-in /skills/ source on every run.
     mkdir -p "$HOME/.claude/commands"
-
-    printf '{\n  "apiKeyHelper": "echo $ANTHROPIC_API_KEY"\n}\n' \
-        > "$HOME/.claude/settings.json"
 
     cp /skills/wss-profiler/SKILL.md "$HOME/.claude/commands/wss-profiler.md"
 
