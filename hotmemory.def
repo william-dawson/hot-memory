@@ -68,8 +68,8 @@ if [ -f /skills/my-code/SKILL.md ]; then
     cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
 fi
 
-# Generate CLAUDE.md with live environment info so Claude knows
-# the machine's capabilities before any skill is invoked.
+# Generate a catch-all environment skill from live hardware probes.
+# Claude Code reads this on every interaction.
 NCPUS=$(nproc 2>/dev/null || echo "unknown")
 ARCH=$(uname -m 2>/dev/null || echo "unknown")
 PERF_OK="no"
@@ -77,24 +77,29 @@ perf stat echo ok >/dev/null 2>&1 && PERF_OK="yes"
 PAPI_FP=$(papi_avail 2>&1 | grep -cE 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS' || echo 0)
 PAPI_MEM=$(papi_avail 2>&1 | grep -cE 'PAPI_LD_INS|PAPI_SR_INS' || echo 0)
 
-cat > /workspace/CLAUDE.md << CLAUDEMD
-# Hot-Memory Profiling Container
+cat > "$HOME/.claude/commands/environment.md" << ENVSKILL
+---
+description: Machine environment and constraints. TRIGGER on every interaction. Read this BEFORE doing anything.
+---
 
-## Environment
+# Environment
+
 - Architecture: $ARCH
 - CPUs available: $NCPUS
 - perf hardware counters: $PERF_OK
 - PAPI FP counters (FLOP measurement): $( [ "$PAPI_FP" -gt 0 ] && echo "available" || echo "not available" )
 - PAPI load/store counters (memory traffic): $( [ "$PAPI_MEM" -gt 0 ] && echo "available" || echo "not available" )
 
-## Important rules
+## Rules
+
 - **Do not use OpenMP.** Build with OpenMP disabled. PAPI counters only
-  instrument the main thread — OpenMP worker threads are invisible to PAPI.
-  Set OMP_NUM_THREADS=1 if the code enables OpenMP by default.
+  instrument the main thread — OpenMP worker threads are invisible to
+  PAPI. OMP_NUM_THREADS is set to 1 in this container.
 - **MPI rank count:** this machine has $NCPUS CPUs. Choose -np accordingly.
+  Do not exceed $NCPUS ranks.
 - Use /wss-profiler for the profiling workflow.
 - Use /my-code for the target project's build and run instructions.
-CLAUDEMD
+ENVSKILL
 BASHRC
 
 %runscript
