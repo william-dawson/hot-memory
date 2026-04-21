@@ -16,8 +16,6 @@ The end-user clones this repo, builds the SIF, mounts their own code + a filled-
 
 ```
 hotmemory.def               Singularity/Apptainer build definition (primary delivery)
-Dockerfile                  Docker equivalent (reference / local dev convenience)
-entrypoint.sh               Docker entrypoint: copies my-code skill into Claude commands/
 wss_profiler.h              C header baked into the image; users copy this into their src
 
 skills/
@@ -29,9 +27,8 @@ example/
   Makefile                  Builds bench; `make profile` enables WSS macros
   my-code/SKILL.md          Fully filled-in code skill for the example (the reference for what a good skill looks like)
 
-plan.md                     Full design doc: methodology, caveats, GPU memory modeling math, future work
-DEVELOPING.md               Developer workflow: how to build, test locally, and publish releases
 README.md                   User-facing quickstart
+AGENTS.md                   Developer reference for agents and contributors
 ```
 
 ---
@@ -53,18 +50,19 @@ Claude is the glue. It reads both and synthesises. Neither skill references the 
 
 ## Container build and test
 
-**Build (requires Linux amd64):**
+**Build (Linux amd64 or aarch64 — must build on the target machine):**
 ```bash
-apptainer build hotmemory.sif hotmemory.def
-# or
-singularity build hotmemory.sif hotmemory.def
+singularity build --fakeroot hotmemory.sif hotmemory.def
+# or with apptainer:
+apptainer build --fakeroot hotmemory.sif hotmemory.def
+# omit --fakeroot if you have root
 ```
 
 **Test with the built-in example:**
 ```bash
 export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
 
-apptainer run --fakeroot \
+singularity run --fakeroot \
   --bind "$(pwd)/example":/workspace \
   --bind "$(pwd)/example/my-code":/skills/my-code \
   ./hotmemory.sif bash
@@ -91,10 +89,10 @@ CI (`singularity.yml`) builds and attaches `hotmemory.sif` automatically. On ord
 
 ## Platform constraints — critical
 
-- **Linux amd64 only.** `perf` and PAPI hardware counters require a real Linux kernel. Docker Desktop for Mac runs in a VM that does not expose CPU performance counters. All testing must happen on a Linux host or HPC node.
-- **Privileged runtime required.** Writing to `/proc/self/clear_refs` (WSS measurement) needs `CAP_SYS_RESOURCE`; `perf_event_open` may need `kernel.perf_event_paranoid=-1` set on the host.
-  - Singularity: `--fakeroot` or a privileged environment
-  - Docker: `--privileged`
+- **Linux only (amd64 or aarch64).** `perf` and PAPI hardware counters require a real Linux kernel. Docker Desktop for Mac runs in a VM that does not expose CPU performance counters. All testing must happen on a Linux host or HPC node.
+- **Build the SIF on the target architecture.** The CI workflow produces an amd64 SIF. For ARM (e.g. NVIDIA Grace / Neoverse V2), build directly on the Grace node: `singularity build --fakeroot hotmemory.sif hotmemory.def`.
+- **PAPI on ARM (Neoverse V2).** Run `papi_avail | grep -E 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS'` inside the container after building. If the standard presets are unavailable the header falls back gracefully (FLOPs reported as 0 with a message). See the PAPI fallback chain note in the header section below.
+- **Privileged runtime required.** Writing to `/proc/self/clear_refs` (WSS measurement) needs `CAP_SYS_RESOURCE`; `perf_event_open` may need `kernel.perf_event_paranoid=-1` set on the host. Use `--fakeroot` with Singularity.
 - The `bench.c` clangd diagnostics (MPI not found) are expected on Mac/without MPI headers — ignore them; the code is correct and builds inside the container.
 
 ---
@@ -129,7 +127,7 @@ From: hotmemory.sif
 
 **Changing the baked-in skill** — edit `skills/wss-profiler/SKILL.md` then rebuild the SIF. The `%files` section in `hotmemory.def` copies it in.
 
-**The `perf` symlink** — `linux-tools-generic` installs a kernel-version-specific binary under `/usr/lib/linux-tools-*/perf`. The Dockerfile/def file resolves this with `ln -sf $(find ... -name perf | head -1) /usr/local/bin/perf`. If perf breaks after a base image update, this is where to look.
+**The `perf` symlink** — `linux-tools-generic` installs a kernel-version-specific binary under `/usr/lib/linux-tools-*/perf`. The def file resolves this with `ln -sf $(find ... -name perf | head -1) /usr/local/bin/perf`. If perf breaks after a base image update, this is where to look.
 
 ---
 
@@ -144,7 +142,7 @@ The most common contribution is improving `skills/wss-profiler/SKILL.md`. Key th
 - The caveats table (4 KB granularity, main-thread PAPI only, smaps noise)
 - The troubleshooting table
 
-`plan.md` is the authoritative design document. When in doubt about methodology, check there. The skill file is the distilled, actionable version of `plan.md`.
+The skill file is the authoritative, actionable description of the methodology. `wss-profiler/SKILL.md` is the source of truth for how profiling works.
 
 ---
 
@@ -153,6 +151,6 @@ The most common contribution is improving `skills/wss-profiler/SKILL.md`. Key th
 - **Singularity maps `$HOME`, not `/root`.** The `%runscript` exists specifically because Singularity runs as the real user with their `$HOME`, so `/root/.claude/` from the image is inaccessible. The runscript copies settings and skill files into `$HOME/.claude/`. If Claude can't find skills inside the container, this is the first place to debug.
 - **`--allow-run-as-root` for mpirun inside containers.** OpenMPI refuses to run as root without this flag. Required in the container (where the user is root). Drop it outside.
 - **WSS measures rank 0 only.** The profiler assumes roughly symmetric workload across ranks. For load-imbalanced codes, the measurements may undercount the busiest rank.
-- **PAPI only counts the main thread.** OpenMP worker threads are not instrumented. FLOP counts will be low for heavily-threaded kernels. This is a known limitation documented in `plan.md` as future work.
+- **PAPI only counts the main thread.** OpenMP worker threads are not instrumented. FLOP counts will be low for heavily-threaded kernels.
 - **smaps noise floor is a few MB.** For kernels with small working sets (<10 MB), the hot-byte count includes stack, code segment, and library pages. Interpret with caution; for large kernels it's negligible.
 - **`wss_profiler.h` is included in `example/bench.c` as `"wss_profiler.h"`** (relative path), but also installed at `/usr/local/include/wss_profiler.h`. The Makefile in the example does not use `-I..`; it relies on the system include path inside the container.

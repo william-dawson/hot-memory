@@ -11,8 +11,10 @@ The idea here is to model what happens if you try to accelerate the code on a sm
 
 ## Quickstart
 
-Requires a Linux amd64 host (HPC node or workstation) — perf and PAPI
-hardware counters are not available inside Docker Desktop for Mac.
+Requires a real Linux host — perf and PAPI hardware counters are not
+available inside Docker Desktop for Mac. Both `linux/amd64` and
+`linux/aarch64` (e.g. NVIDIA Grace / Neoverse V2) are supported; build
+the SIF on the target machine.
 
 **1. Get the Singularity/Apptainer container**
 
@@ -21,8 +23,9 @@ Clone the repo and build the SIF locally:
 ```bash
 git clone https://github.com/william-dawson/hot-memory.git
 cd hot-memory
-apptainer build hotmemory.sif hotmemory.def
-# or: singularity build hotmemory.sif hotmemory.def
+apptainer build --fakeroot hotmemory.sif hotmemory.def
+# or: singularity build --fakeroot hotmemory.sif hotmemory.def
+# (omit --fakeroot if you have root)
 ```
 
 If a GitHub Release has been published with `hotmemory.sif` attached, you can

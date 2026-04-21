@@ -13,10 +13,13 @@
  *   [WSS] kernel_name       512.0 MB hot     0.480 GFLOP     0.98 FLOP/byte
  *
  * Requirements:
- *   - Linux (uses /proc/self/clear_refs and /proc/self/smaps)
- *   - PAPI (libpapi-dev)
+ *   - Linux amd64 or aarch64 (uses /proc/self/clear_refs and /proc/self/smaps)
+ *   - PAPI (libpapi-dev) — on ARM/Neoverse V2 run `papi_avail` to check which
+ *     FP events are exposed; the header falls back automatically if PAPI_DP_OPS
+ *     or PAPI_SP_OPS are unavailable.
  *   - MPI (for rank filtering; works with or without OpenMP)
- *   - CAP_SYS_RESOURCE or root to write clear_refs (run container --privileged)
+ *   - CAP_SYS_RESOURCE or root to write clear_refs (run container --privileged
+ *     or --fakeroot)
  */
 
 #pragma once
