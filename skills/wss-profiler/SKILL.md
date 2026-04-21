@@ -353,9 +353,16 @@ When the user asks you to generate a skill file for their project (e.g.
 4. **Try building and running**: use the build system you found. Note the
    exact commands that work.
 5. **Determine build extensibility**: figure out how to add a new library
-   or include path. For Makefiles, check if there are variables like
-   `CFLAGS`, `LDFLAGS`, `OPTIONS` that accept appended values. For CMake,
-   check for `target_link_libraries` or similar.
+   or include path. This is critical — the "Extending the build" section
+   of the skill must be detailed enough that someone can inject a library
+   into the build without reading the Makefile themselves. Specifically:
+   - For C/C++: how to add `-I` (include path), `-l` (library), `-D` (define)
+   - For Fortran: how to add `-I` for `.mod` files (Fortran compilers do
+     NOT search system paths like `/usr/local/include` for modules by
+     default — this must be explicit), how to link a library
+   - What Makefile variables accept appended values (`CFLAGS`, `LDFLAGS`,
+     `OPTIONS`, etc.)
+   - Where in the build the final link step happens (for adding `-l` flags)
 6. **Write the SKILL.md** following the template at
    `/skills/code-template/SKILL.md` (also available as `/my-code` if
    mounted). Fill in every section:
