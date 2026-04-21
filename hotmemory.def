@@ -5,6 +5,8 @@ From: ubuntu:24.04
     skills/wss-profiler/SKILL.md  /skills/wss-profiler/SKILL.md
     wss_profiler.h                /skills/wss-profiler/wss_profiler.h
     wss_profiler.h                /usr/local/include/wss_profiler.h
+    wss_profiler_f.c              /usr/local/include/wss_profiler_f.c
+    wss_profiler_mod.f90          /usr/local/include/wss_profiler_mod.f90
 
 %environment
     export DEBIAN_FRONTEND=noninteractive
