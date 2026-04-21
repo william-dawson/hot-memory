@@ -8,7 +8,14 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-latest-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,19 +28,20 @@ jobs:
       - name: Build SIF
         run: apptainer build hotmemory.sif hotmemory.def
 
-      # On every push to main: upload as a workflow artifact (downloadable
-      # from the Actions tab, expires after 90 days).
       - name: Upload artifact
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
-          name: hotmemory-sif
+          name: hotmemory-sif-${{ matrix.arch }}
           path: hotmemory.sif
           retention-days: 90
 
-      # On release: attach the SIF permanently so users can wget it.
+      - name: Rename SIF for release
+        if: github.event_name == 'release'
+        run: mv hotmemory.sif hotmemory-${{ matrix.arch }}.sif
+
       - name: Attach SIF to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: hotmemory.sif
+          files: hotmemory-${{ matrix.arch }}.sif
