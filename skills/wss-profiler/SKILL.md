@@ -272,6 +272,42 @@ With known execution order and device memory budget, compute the exact number:
 
 ---
 
+## Generating a code skill for an unknown project
+
+When the user asks you to generate a skill file for a project (e.g. "make
+a skill file for the code in /workspace"), follow this procedure:
+
+1. **Explore the source tree**: `ls`, `find`, look at file extensions to
+   determine the language (C, C++, Fortran, mixed).
+2. **Find the build system**: look for `Makefile`, `CMakeLists.txt`,
+   `configure`, or build scripts. Read them to understand how compilation
+   and linking works.
+3. **Identify the entry point**: find `main()` (C/C++) or `program` (Fortran).
+   Trace the call graph to understand the kernel structure.
+4. **Try building and running**: use the build system you found. Note the
+   exact commands that work.
+5. **Determine build extensibility**: figure out how to add a new library
+   or include path. For Makefiles, check if there are variables like
+   `CFLAGS`, `LDFLAGS`, `OPTIONS` that accept appended values. For CMake,
+   check for `target_link_libraries` or similar.
+6. **Write the SKILL.md** following the template at
+   `/skills/code-template/SKILL.md` (also available as `/my-code` if
+   mounted). Fill in every section:
+   - What the code is (language, domain, parallelism model)
+   - Source layout (key files and what they contain)
+   - Build command
+   - Extending the build (how to add headers/libraries/flags — critical)
+   - Run command
+   - Expected output / correctness check
+   - Notes for the profiler (language, parallelism, timestep structure)
+7. **Save the skill** to `/skills/my-code/SKILL.md` so it's available as
+   a slash command.
+
+**Important**: the generated skill must NOT reference this profiler, WSS
+macros, PAPI, or any instrumentation. It describes only the user's code.
+
+---
+
 ## What this skill does NOT know
 
 - How to build or run the user's code — that is in the user's code skill.
