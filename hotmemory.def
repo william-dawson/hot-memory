@@ -13,6 +13,9 @@ From: ubuntu:24.04
     export OPENAI_BASE_URL="https://bedrock-mantle.us-east-1.api.aws/v1"
     export HOME=/tmp/claude-home
     export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    export OMPI_ALLOW_RUN_AS_ROOT=1
+    export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+    export OMPI_MCA_rmaps_base_oversubscribe=1
 
 %post
     export DEBIAN_FRONTEND=noninteractive
