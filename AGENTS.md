@@ -16,16 +16,25 @@ The end-user clones this repo, builds the SIF, mounts their own code + a filled-
 
 ```
 hotmemory.def               Singularity/Apptainer build definition (primary delivery)
-wss_profiler.h              C header baked into the image; users copy this into their src
+hotmemory.sh                Wrapper script for running the container
+
+wss_profiler/
+  wss_profiler.h            C header — macros for WSS + FLOP measurement
+  wss_profiler_f.c          Fortran-callable C wrappers
+  wss_profiler_mod.f90      Fortran module interface
 
 skills/
   wss-profiler/SKILL.md     Profiler skill — baked into the image and exposed as /wss-profiler slash command
   code-template/SKILL.md    Blank template users copy to write their code skill
 
 example/
-  bench.c                   Synthetic MPI+OpenMP benchmark (two deliberately contrasting kernels)
+  bench.c                   Synthetic MPI benchmark (two deliberately contrasting kernels)
   Makefile                  Builds bench; `make profile` enables WSS macros
-  my-code/SKILL.md          Fully filled-in code skill for the example (the reference for what a good skill looks like)
+  my-code/SKILL.md          Fully filled-in code skill for the example
+
+cloverleaf/
+  fetch_and_build.sh        Clones and builds CloverLeaf reference version
+  my-code/SKILL.md          Code skill for CloverLeaf
 
 README.md                   User-facing quickstart
 AGENTS.md                   Developer reference for agents and contributors
