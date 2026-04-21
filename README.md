@@ -22,12 +22,12 @@ host permits:
 | Feature | Requires | Without it |
 |---------|----------|------------|
 | Hot-byte measurement (`/proc/clear_refs`) | `--fakeroot` or root | Not available |
-| Hotspot discovery (`perf record`) | `perf_event_paranoid` ≤ 1 | Phase 1 unavailable; skip to Phase 2 if you know which kernels to target |
-| FLOP counting (PAPI) | `perf_event_paranoid` ≤ 1 | FLOPs reported as 0; hot-byte measurement still works |
+| Hotspot discovery (`perf record`) | `perf_event_paranoid` ≤ 0 | Phase 1 unavailable; skip to Phase 2 if you know which kernels to target |
+| FLOP counting (PAPI) | `perf_event_paranoid` ≤ 0 | FLOPs reported as 0; hot-byte measurement still works |
 
 For the full workflow, ask your sysadmin to set on the compute nodes:
 ```bash
-sysctl kernel.perf_event_paranoid=-1
+sysctl kernel.perf_event_paranoid=0
 ```
 
 ---
@@ -82,7 +82,7 @@ Ask:
 > **Note:** If `perf` returns "Permission denied", Phase 1 (hotspot discovery)
 > is unavailable but Phase 2 (hot-byte measurement) still works if you already
 > know which kernels to target. FLOP counts will be reported as 0. For the full
-> workflow, ask your sysadmin to run: `sysctl kernel.perf_event_paranoid=-1`
+> workflow, ask your sysadmin to run: `sysctl kernel.perf_event_paranoid=0`
 
 ---
 
