@@ -9,6 +9,23 @@ The payoff is **GPU memory planning**: per-kernel hot set data lets you determin
 
 ---
 
+## General rule: log everything
+
+Always redirect profiling output to files so the user can review it later.
+For every profiling run, capture both stdout and stderr to a timestamped
+log file:
+
+```bash
+mpirun -np <N> ./binary <args> > profiling_run.log 2>&1
+```
+
+After the run, grep the log for `[WSS]` lines and present the results.
+Keep the full log — the user may want to inspect it for warnings, timing
+data, or unexpected output. Name logs descriptively:
+`phase1_peak_memory.log`, `phase2_perf.log`, `phase3_hotset_run1.log`, etc.
+
+---
+
 ## Container requirements
 
 The profiling container must have:
