@@ -38,15 +38,6 @@ From: ubuntu:24.04
     npm install -g @anthropic-ai/claude-code
     rm -rf /var/lib/apt/lists/*
 
-    # Override nproc — the real one returns 1 inside fakeroot namespaces
-    # because cgroups restrict the CPU count. /proc/cpuinfo is accurate.
-    mv /usr/bin/nproc /usr/bin/nproc.real
-    cat > /usr/bin/nproc << 'NPROC'
-#!/bin/bash
-grep -c processor /proc/cpuinfo
-NPROC
-    chmod +x /usr/bin/nproc
-
     # Pre-compile the WSS profiler library (C wrapper + Fortran module)
     # so users just link with -lwss_profiler -lpapi, no source copying needed.
     cd /usr/local/include
@@ -91,7 +82,7 @@ PAPI_MEM_STR=$( [ "$PAPI_MEM" -gt 0 ] && echo "available" || echo "not available
 # info automatically on every interaction — no skill invocation needed.
 cat > "$HOME/.claude/settings.json" << SETTINGS
 {
-  "systemPrompt": "You are inside a hot-memory profiling container. Architecture: $ARCH. CPUs available: $NCPUS. perf hardware counters: $PERF_OK. PAPI FP counters: $PAPI_FP_STR. PAPI load/store counters: $PAPI_MEM_STR. RULES: Do not use OpenMP — build with it disabled, OMP_NUM_THREADS=1 is set. This machine has $NCPUS CPUs — choose MPI -np accordingly. Use /wss-profiler for the profiling workflow. Use /my-code for the target project."
+  "systemPrompt": "You are inside a hot-memory profiling container. Architecture: $ARCH. CPUs available: $NCPUS. perf hardware counters: $PERF_OK. PAPI FP counters: $PAPI_FP_STR. PAPI load/store counters: $PAPI_MEM_STR. RULES: (1) Do not use OpenMP — build with it disabled, OMP_NUM_THREADS=1 is set. (2) This machine has $NCPUS CPUs. WARNING: nproc returns 1 inside this container because Singularity fakeroot restricts cgroup CPU visibility. This is a known bug. The actual CPU count is $NCPUS (detected from /proc/cpuinfo). Do NOT trust nproc — use $NCPUS for MPI -np. To verify, run: grep -c processor /proc/cpuinfo. (3) Use /wss-profiler for the profiling workflow. (4) Use /my-code for the target project."
 }
 SETTINGS
 BASHRC
