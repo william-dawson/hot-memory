@@ -1,7 +1,9 @@
 *.o
 *.a
 *.so
+*.sif
 perf.data
 perf.data.old
+example/bench
 __pycache__/
 .DS_Store
