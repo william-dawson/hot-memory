@@ -3,25 +3,33 @@
 # hotmemory — wrapper for running the hot-memory profiling container.
 #
 # Usage:
-#   ./hotmemory.sh <code-dir> <skill-dir> [extra singularity args...]
+#   ./hotmemory.sh <code-dir> [skill-dir] [extra singularity args...]
+#   ./hotmemory.sh --build          Build the SIF from hotmemory.def
 #
 # Examples:
 #   ./hotmemory.sh ./example ./example/my-code
 #   ./hotmemory.sh ./cloverleaf ./cloverleaf/my-code
 #   ./hotmemory.sh /path/to/my/project /path/to/my/skill
+#   ./hotmemory.sh --build
 #
 # Environment variables (set before running):
 #   SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK  — required
 #   SINGULARITYENV_OPENAI_API_KEY            — required
 #   HOTMEMORY_SIF                            — path to SIF (default: ./hotmemory.sif)
-#   HOTMEMORY_NP                             — number of MPI ranks for testing (optional)
 
 set -e
 
 SIF="${HOTMEMORY_SIF:-./hotmemory.sif}"
-CODE_DIR="${1:?Usage: $0 <code-dir> <skill-dir>}"
-SKILL_DIR="${2:?Usage: $0 <code-dir> <skill-dir>}"
-shift 2
+
+if [ "${1:-}" = "--build" ]; then
+    echo "Building $SIF from hotmemory.def..."
+    singularity build --fakeroot "$SIF" hotmemory.def
+    exit 0
+fi
+
+CODE_DIR="${1:?Usage: $0 <code-dir> [skill-dir]}"
+SKILL_DIR="${2:-$CODE_DIR}"
+shift; shift 2>/dev/null || true
 
 # Resolve to absolute paths
 CODE_DIR="$(cd "$CODE_DIR" && pwd)"
