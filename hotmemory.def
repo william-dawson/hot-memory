@@ -38,6 +38,28 @@ From: ubuntu:24.04
 
     # Symlink is not needed — npm -g puts claude in /usr/bin/claude
 
+    # Bake container setup into bash profile so it runs even when
+    # Singularity falls back to sandbox extraction (which skips %runscript).
+    cat >> /etc/bash.bashrc << 'BASHRC'
+
+# ── hotmemory container setup ──
+export HOME=/tmp/claude-home
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export CLAUDE_CODE_USE_BEDROCK=1
+export AWS_REGION="us-east-1"
+export OPENAI_BASE_URL="https://bedrock-mantle.us-east-1.api.aws/v1"
+export OMPI_ALLOW_RUN_AS_ROOT=1
+export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+export OMPI_MCA_rmaps_base_oversubscribe=1
+
+mkdir -p "$HOME/.claude/commands"
+cp /skills/wss-profiler/SKILL.md "$HOME/.claude/commands/wss-profiler.md" 2>/dev/null
+if [ -f /skills/my-code/SKILL.md ]; then
+    cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
+fi
+cd /workspace
+BASHRC
+
 %runscript
     # Ensure the clean HOME exists with skills installed
     mkdir -p "$HOME/.claude/commands"
