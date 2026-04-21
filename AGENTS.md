@@ -27,14 +27,17 @@ skills/
   wss-profiler/SKILL.md     Profiler skill — baked into the image and exposed as /wss-profiler slash command
   code-template/SKILL.md    Blank template users copy to write their code skill
 
-example/
-  bench.c                   Synthetic MPI benchmark (two deliberately contrasting kernels)
-  Makefile                  Builds bench; `make profile` enables WSS macros
-  my-code/SKILL.md          Fully filled-in code skill for the example
-
-cloverleaf/
-  fetch_and_build.sh        Clones and builds CloverLeaf reference version
-  my-code/SKILL.md          Code skill for CloverLeaf
+examples/
+  bench/
+    bench.c                 Synthetic MPI benchmark (two deliberately contrasting kernels)
+    Makefile                Builds bench; `make profile` enables WSS macros
+    my-code/SKILL.md        Code skill for the bench example
+  cloverleaf/
+    fetch_and_build.sh      Clones and builds CloverLeaf reference version
+    my-code/SKILL.md        Code skill for CloverLeaf
+  qws/
+    fetch_and_build.sh      Clones and builds QWS lattice QCD library
+    my-code/SKILL.md        Code skill for QWS
 
 README.md                   User-facing quickstart
 AGENTS.md                   Developer reference for agents and contributors
@@ -55,7 +58,7 @@ Claude is the glue. It reads both and synthesises. Neither skill references the 
 
 **Strict isolation rule:** The code skill must contain ONLY knowledge about the user's code — source layout, build commands, run commands, and domain-specific notes. It must NOT reference the profiler, WSS macros, PAPI, `-DPROFILE_WSS`, or any instrumentation details. Similarly, the profiler skill must NOT reference any specific user code. Claude synthesises the two at runtime. If you find profiler-specific instructions leaking into a code skill (or vice versa), that is a bug — remove them.
 
-**The code-template skill** (`skills/code-template/SKILL.md`) is the blank form users fill in. Study `example/my-code/SKILL.md` for a fully correct example — it is the canonical reference for what Claude expects to find.
+**The code-template skill** (`skills/code-template/SKILL.md`) is the blank form users fill in. Study `examples/bench/my-code/SKILL.md` for a fully correct example — it is the canonical reference for what Claude expects to find.
 
 ---
 
@@ -74,7 +77,7 @@ apptainer build --fakeroot hotmemory.sif hotmemory.def
 export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
 export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
 
-./hotmemory.sh ./example ./example/my-code
+./hotmemory.sh ./examples/bench ./examples/bench/my-code
 ```
 
 Inside the container, verify the toolchain:

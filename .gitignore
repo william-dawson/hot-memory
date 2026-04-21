@@ -4,6 +4,6 @@
 *.sif
 perf.data
 perf.data.old
-example/bench
+examples/bench/bench
 __pycache__/
 .DS_Store

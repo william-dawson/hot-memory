@@ -7,8 +7,8 @@
 #   ./hotmemory.sh --build          Build the SIF from hotmemory.def
 #
 # Examples:
-#   ./hotmemory.sh ./example ./example/my-code
-#   ./hotmemory.sh ./cloverleaf ./cloverleaf/my-code
+#   ./hotmemory.sh ./examples/bench ./examples/bench/my-code
+#   ./hotmemory.sh ./examples/cloverleaf ./examples/cloverleaf/my-code
 #   ./hotmemory.sh /path/to/my/project /path/to/my/skill
 #   ./hotmemory.sh --build
 #

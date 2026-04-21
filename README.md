@@ -113,10 +113,10 @@ Ask:
 
 ## Try it with the built-in example
 
-The `example/` directory contains a synthetic MPI benchmark with two kernels that split memory roughly 75/25 — `stream_kernel` is memory-bound (~96 MB hot at 4 ranks) and `compute_kernel` is compute-bound (~32 MB hot). Together they use about 128 MB per rank, but neither touches all of it — exactly the scenario where hot-set profiling is more useful than peak allocation.
+The `examples/bench/` directory contains a synthetic MPI benchmark with two kernels that split memory roughly 75/25 — `stream_kernel` is memory-bound (~96 MB hot at 4 ranks) and `compute_kernel` is compute-bound (~32 MB hot). Together they use about 128 MB per rank, but neither touches all of it — exactly the scenario where hot-set profiling is more useful than peak allocation.
 
 ```bash
-./hotmemory.sh ./example ./example/my-code
+./hotmemory.sh ./examples/bench ./examples/bench/my-code
 ```
 
 Inside the container:
@@ -134,10 +134,10 @@ Try asking:
 
 ## Try it with CloverLeaf
 
-For a more realistic test, the `cloverleaf/` directory contains a skill and fetch script for [CloverLeaf](https://github.com/UK-MAC/CloverLeaf_ref), a Lagrangian-Eulerian hydrodynamics mini-app with 9 distinct kernels per timestep — each with different memory access patterns.
+For a more realistic test, the `examples/cloverleaf/` directory contains a skill and fetch script for [CloverLeaf](https://github.com/UK-MAC/CloverLeaf_ref), a Lagrangian-Eulerian hydrodynamics mini-app with 9 distinct kernels per timestep — each with different memory access patterns.
 
 ```bash
-./hotmemory.sh ./cloverleaf ./cloverleaf/my-code
+./hotmemory.sh ./examples/cloverleaf ./examples/cloverleaf/my-code
 ```
 
 The skill file includes knowledge of using the fetch script to grab the code automatically. 
