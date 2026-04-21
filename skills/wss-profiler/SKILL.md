@@ -24,6 +24,44 @@ definition. The user extends it for their code's dependencies.
 
 ---
 
+## Phase 0: Baseline peak memory
+
+### When to use
+Always. Run this first, before any profiling, to establish the peak memory
+allocation for the code. This is the naive upper bound — the number someone
+would cite if they didn't know about hot working sets.
+
+### What to do
+
+1. **Build the code normally** (no profiling flags).
+2. **Run with `/usr/bin/time -v`** to capture peak RSS:
+
+For MPI codes, wrap rank 0:
+```bash
+mpirun -np <N> bash -c '
+  if [ "$OMPI_COMM_WORLD_RANK" -eq 0 ]; then
+    /usr/bin/time -v <run_command> 2>&1
+  else
+    <run_command> 2>/dev/null
+  fi' 2>&1 | grep "Maximum resident"
+```
+
+For non-MPI codes:
+```bash
+/usr/bin/time -v <binary> <args> 2>&1 | grep "Maximum resident"
+```
+
+3. **Record the peak RSS** in MB (the value is in KB, divide by 1024).
+4. **Report to the user**: "Peak memory allocation for rank 0: X MB.
+   This is the upper bound — the actual memory each kernel needs may be
+   much smaller. Next we'll measure the per-kernel hot working sets."
+
+This number becomes the baseline for comparison throughout the rest of
+the workflow. Every time you report a kernel's hot set, compare it to
+the peak: "stencil_apply touches 512 MB out of 3072 MB total (17%)".
+
+---
+
 ## Phase 1: Discovery (perf)
 
 ### When to use
@@ -180,14 +218,22 @@ ships a static library (`libwss_profiler.a`) and Fortran module file
 
 ### How to present results
 
-Present a table combining Phase 1 timing with Phase 2 measurements:
+Always include the Phase 0 peak memory as context. Present a table
+combining peak allocation, Phase 1 timing, and Phase 2 measurements:
 
 ```
-| Kernel           | % Time | Hot MB | GFLOP | FLOP/byte | Assessment   |
-|------------------|--------|--------|-------|-----------|--------------|
-| stencil_apply    |  42.3% |    512 |  0.48 |      0.98 | memory-bound |
-| fft_forward      |  28.1% |    128 |  0.19 |      1.57 | borderline   |
+Peak memory (rank 0): 3072 MB
+
+| Kernel           | % Time | Hot MB | % of Peak | GFLOP | FLOP/byte | Assessment   |
+|------------------|--------|--------|-----------|-------|-----------|--------------|
+| stencil_apply    |  42.3% |    512 |     16.7% |  0.48 |      0.98 | memory-bound |
+| fft_forward      |  28.1% |    128 |      4.2% |  0.19 |      1.57 | borderline   |
 ```
+
+The "% of Peak" column is the key insight — it shows how much of the
+total allocation each kernel actually uses. If the heaviest kernel uses
+only 17% of peak, the code needs far less GPU memory than a naive
+estimate would suggest.
 
 **FLOP/byte interpretation:**
 - < 1: kernel sweeps data with little reuse — almost certainly memory-bandwidth-bound
