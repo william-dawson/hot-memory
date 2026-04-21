@@ -155,7 +155,11 @@ The skill file is the authoritative, actionable description of the methodology. 
 - **smaps noise floor is a few MB.** For kernels with small working sets (<10 MB), the hot-byte count includes stack, code segment, and library pages. Interpret with caution; for large kernels it's negligible.
 ---
 
-## OpenMPI inside fakeroot containers
+## Singularity sandbox fallback
+
+When FUSE mounting fails (common without `user_allow_other` in `/etc/fuse.conf`), Singularity falls back to extracting the SIF to a temporary sandbox. In this mode, **both `%runscript` and `%environment` are skipped**. All container setup must therefore live in `/etc/bash.bashrc` (baked in via `%post`) so it runs for any interactive bash session. The `--pwd /workspace` flag is used instead of `cd /workspace` in scripts, because it's the only reliable way to set the initial directory across all Singularity execution modes.
+
+---
 
 OpenMPI's `hwloc` topology detection sees only 1 slot inside a Singularity `--fakeroot` namespace, even when `nproc` and `/proc/cpuinfo` show the correct number of cores (e.g. 20). This causes `mpirun -np 2` to fail with "not enough slots". The fix is `OMPI_MCA_rmaps_base_oversubscribe=1` set in `%environment`, which tells OpenMPI to skip its broken slot detection. This is not true oversubscription — the cores are available, OpenMPI just can't see them through the user namespace.
 
