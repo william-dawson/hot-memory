@@ -167,7 +167,7 @@ Present a table combining Phase 1 timing with Phase 2 measurements:
 
 **Always state the caveats:**
 - Hot bytes are at 4 KB page granularity (rounded up). Small working sets have significant rounding error.
-- FLOP count is main-thread only. OpenMP worker threads are not counted by PAPI in this configuration.
+- **PAPI only counts the main thread. OpenMP worker thread FLOPs are NOT counted.** For codes that use OpenMP parallelism inside kernels, the FLOP count will be severely undercounted. The hot-byte measurement (smaps) IS process-wide and includes all threads. When profiling OpenMP codes, rely on hot bytes for GPU memory planning and treat FLOP counts as lower bounds only.
 - FLOP/byte here is per byte of *working set*, not per byte of *bandwidth*. It is not arithmetic intensity in the roofline sense.
 - smaps includes stack, code, and library pages (~a few MB of noise). For large working sets this is negligible.
 
