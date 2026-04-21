@@ -56,6 +56,23 @@ perf report -n --stdio --no-children -i /tmp/perf.data 2>/dev/null | head -60
 
 5. **Report to the user**: list the top functions by % samples, note which are in their code vs. MPI/OpenMP library, and suggest which ones to instrument in Phase 2.
 
+### Fallback when perf is unavailable
+
+If `perf record` fails with "Permission denied" (`perf_event_paranoid` too high), fall back to **manual timing instrumentation**:
+
+1. Add `MPI_Wtime()` calls around each suspected kernel in the user's code.
+2. Print elapsed time per kernel per rank.
+3. Report the results as wall-clock time per kernel.
+
+This gives the same information as perf (which kernels are hot) without hardware counter access. It requires a recompile but no kernel privileges.
+
+```c
+double t0 = MPI_Wtime();
+stencil_apply(grid, nx, ny, nz);
+double t1 = MPI_Wtime();
+if (rank == 0) fprintf(stderr, "stencil_apply: %.3f s\n", t1 - t0);
+```
+
 ### What perf measures
 - Wall-clock samples on the profiled rank/process.
 - MPI wait time shows up as MPI library time — this is useful (it means the rank is idle waiting for communication) but may surprise users.
@@ -255,7 +272,7 @@ With known execution order and device memory budget, compute the exact number:
 | `cannot open /proc/self/clear_refs` | Missing privilege | Run container with `--privileged` |
 | `PAPI library init failed` | PAPI not installed or no hardware counter access | Install `libpapi-dev`; may need `--privileged` |
 | `No FP PAPI events available` | Microarchitecture doesn't expose standard events | Run `papi_avail` and use native event names (not yet supported in header) |
-| perf says `Permission denied` | `perf_event_paranoid` too restrictive | Run `sysctl kernel.perf_event_paranoid=-1` on the host |
-| FLOP count is 0 | PAPI events not added, or hardware counters not exposed by the host (VM/container) | Check PAPI init messages in stderr. If counters are unavailable, estimate FLOPs by reading the kernel source: count floating-point operations per element × element count. State clearly it is a theoretical estimate, not a measured value. |
+| perf says `Permission denied` | `perf_event_paranoid` too restrictive | Fall back to MPI_Wtime() instrumentation for hotspot discovery. For FLOP counts, report as 0 — hot-byte measurement still works. For the full workflow, ask sysadmin to run `sysctl kernel.perf_event_paranoid=-1` on the host. |
+| FLOP count is 0 | PAPI events not added, or hardware counters not exposed by the host (VM/container) | Check PAPI init messages in stderr. Hot-byte measurement and GPU memory planning still work without FLOP counts — report the hot MB and note that FLOP/byte is unavailable. For the full workflow, `perf_event_paranoid` must be ≤ 1. |
 | Hot MB seems too high | smaps noise (stack, libs) | For large kernels (>50 MB), noise is <5%. For small kernels, interpret with caution. |
 | Hot MB is the same across kernels | clear_refs not working | Verify `--privileged`; check for `[WSS] cannot open` error |
