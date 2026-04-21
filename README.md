@@ -68,12 +68,10 @@ Download a pre-built SIF from the [latest release](https://github.com/william-da
 
 ```bash
 # For amd64:
-gh release download --repo william-dawson/hot-memory --pattern "hotmemory-amd64.sif"
+wget https://github.com/william-dawson/hot-memory/releases/latest/download/hotmemory-amd64.sif -O hotmemory.sif
 
 # For arm64 (e.g. NVIDIA Grace):
-gh release download --repo william-dawson/hot-memory --pattern "hotmemory-arm64.sif"
-
-mv hotmemory-*.sif hotmemory.sif
+wget https://github.com/william-dawson/hot-memory/releases/latest/download/hotmemory-arm64.sif -O hotmemory.sif
 ```
 
 Or build from source:
