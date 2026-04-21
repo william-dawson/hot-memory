@@ -528,6 +528,15 @@ When the user asks you to generate a skill file for their project (e.g.
 **Important**: the generated skill must NOT reference this profiler, WSS
 macros, PAPI, or any instrumentation. It describes only the user's code.
 
+**Important**: the generated skill MUST include the following line right
+after the `# Skill: my-code` heading:
+
+```
+**Before using this skill, run /environment first if you have not already.**
+It tells you how many CPUs are available, what PAPI counters work, and
+critical warnings about this container.
+```
+
 ---
 
 ## What this skill does NOT know
