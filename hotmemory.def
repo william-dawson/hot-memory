@@ -8,6 +8,7 @@ From: ubuntu:24.04
 
 %environment
     export DEBIAN_FRONTEND=noninteractive
+    export PATH="/root/.local/bin:$PATH"
 
 %post
     export DEBIAN_FRONTEND=noninteractive
