@@ -23,16 +23,6 @@ Given your MPI code, it answers:
 2. Then ask: *"Measure the hot memory of the key kernels."*
 3. I'll handle the rest — build, instrument, run, and report.
 
-## Your environment
-
-```!
-echo "- Architecture: $(uname -m)"
-echo "- CPUs available: $(grep -c processor /proc/cpuinfo)"
-echo "- perf: $(perf stat echo ok >/dev/null 2>&1 && echo 'available' || echo 'not available')"
-echo "- PAPI FP counters: $(papi_avail 2>&1 | grep -cE 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS' | xargs -I{} sh -c '[ {} -gt 0 ] && echo available || echo "not available"')"
-echo "- PAPI load/store counters: $(papi_avail 2>&1 | grep -cE 'PAPI_LD_INS|PAPI_SR_INS' | xargs -I{} sh -c '[ {} -gt 0 ] && echo available || echo "not available"')"
-```
-
 ---
 
 ## General rule: log everything
