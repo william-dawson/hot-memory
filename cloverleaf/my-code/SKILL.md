@@ -10,7 +10,7 @@ CloverLeaf is a Lagrangian-Eulerian hydrodynamics mini-app from the UK
 Mini-App Consortium. It solves the compressible Euler equations on a 2D
 Cartesian grid using an explicit, second-order method. Each timestep
 executes a fixed sequence of distinct computational kernels with different
-memory access patterns — making it ideal for working-set profiling.
+memory access patterns.
 
 MPI-only (no OpenMP). The reference Fortran+C version from
 https://github.com/UK-MAC/CloverLeaf_ref.
@@ -62,16 +62,6 @@ Or use the fetch script which clones and builds:
 bash /workspace/fetch_and_build.sh
 ```
 
-To rebuild with WSS profiling, the Fortran main loop in `hydro.f90` must be
-instrumented. The C kernel files in `kernels/` are where the actual
-computation happens and can be instrumented with `wss_profiler.h`. Since
-the build uses both `mpif90` and `mpicc`, add profiling flags to the C
-compilation only:
-
-```bash
-make COMPILER=GNU C_OPTIONS="-DPROFILE_WSS -lpapi"
-```
-
 ## Run command
 
 ```bash
@@ -106,32 +96,14 @@ Exit code 0 indicates success.
 
 ## Notes for the profiler
 
-- **This is a Fortran code.** Use the Fortran bindings (`wss_profiler_f.c`
-  and `wss_profiler_mod.f90` from `/usr/local/include/`), not the C header
-  directly. See the "Fortran codes" section in the wss-profiler skill for
-  the full procedure.
-- **MPI-only, no OpenMP.** PAPI FLOP counts (main-thread only) are
-  accurate for this code since there are no worker threads.
-- The main timestep loop is in `hydro.f90`. Instrument it by adding
-  `use wss_profiler_mod` and wrapping each kernel call:
-  ```fortran
-  call wss_begin()
-  call accelerate(...)
-  call wss_end_named("accelerate")
-  ```
-- To build with profiling, compile `wss_profiler_f.c` with
-  `mpicc -DPROFILE_WSS -c wss_profiler_f.c -o wss_profiler_f.o` and
-  compile `wss_profiler_mod.f90` with `mpif90 -c wss_profiler_mod.f90`,
-  then add both `.o` files and `-lpapi` to the final link step.
-- Kernels are called every timestep in a fixed order. Instrument one
-  timestep to get the per-kernel hot set.
-- The interesting profiling question is which kernels share arrays and
-  which have disjoint working sets. `PdV`, `ideal_gas`, and `viscosity`
-  all touch the energy/pressure/density fields. `advec_cell` and
-  `advec_mom` touch the velocity and flux fields.
-- For GPU memory planning, the key question is: what is the maximum hot
-  set across all kernels in one timestep? That determines the minimum
-  GPU memory needed.
+- **This is a Fortran code** with C kernel implementations.
+- **MPI-only, no OpenMP.** There are no worker threads.
+- The main timestep loop is in `hydro.f90`. Each kernel is called every
+  timestep in a fixed order.
+- `PdV`, `ideal_gas`, and `viscosity` all touch the energy/pressure/density
+  fields. `advec_cell` and `advec_mom` touch the velocity and flux fields.
+  The interesting profiling question is which kernels share arrays and
+  which have disjoint working sets.
 - Grid size controls the working set. The default `clover.in` is small.
   Use `clover_bm16.in` (or larger) for realistic memory measurements.
 - The code creates output files (`clover.out`, `clover.visit`) in the
