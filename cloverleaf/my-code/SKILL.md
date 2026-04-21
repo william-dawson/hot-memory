@@ -64,18 +64,21 @@ bash /workspace/fetch_and_build.sh
 
 ### Extending the build
 
-This is a mixed Fortran+C project. The Makefile uses `mpif90` for Fortran
-and `mpicc` for C. The final link is done by `mpif90`.
+This is a mixed Fortran+C project. The Makefile compiles all Fortran
+files in a single `mpif90` command and all C files in a single `mpicc`
+command. The final link is done by `mpif90`.
 
 - **To add extra Fortran compiler flags**: `make COMPILER=GNU OPTIONS="-some-flag"`
 - **To add extra C compiler flags**: `make COMPILER=GNU C_OPTIONS="-some-flag"`
-- **To link an additional library**: add the library to the `mpif90` link
+- **To link an additional library**: add `-l` flags to the `mpif90` link
   command in the Makefile. The link step is in the `clover_leaf:` target —
-  append `.o` files and `-l` flags after the existing object list.
-- **To use a Fortran module from an external library**: ensure the `.mod`
-  file is on a path that `mpif90` searches (e.g. `/usr/local/include`),
-  add `use module_name` to the relevant `.f90` source file, and link the
-  library's `.a` or `.so` in the link step.
+  append before the `-o clover_leaf` at the end.
+- **To use a Fortran module from an external library**: the `.mod` file
+  must be findable by `mpif90`. Use `OPTIONS="-I/path/to/mod/files"` to
+  add the include path. For example, modules installed at
+  `/usr/local/include` require `OPTIONS="-I/usr/local/include"`. Then add
+  `use module_name` to the relevant `.f90` source file and link the
+  library in the link step.
 - **To include a new C header**: add `#include "header.h"` to the relevant
   `kernels/*_c.c` file; if it's on a system path no `-I` flag is needed.
 
