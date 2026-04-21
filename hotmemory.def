@@ -28,25 +28,16 @@ From: ubuntu:24.04
     # Symlink claude into a system path so it works regardless of $HOME at runtime
     ln -sf /root/.local/bin/claude /usr/local/bin/claude
 
-    # Write our config after the installer, using absolute paths.
-    mkdir -p /root/.claude/commands
-
-    # API key helper — reads ANTHROPIC_API_KEY from the environment at runtime
-    printf '{\n  "apiKeyHelper": "echo $ANTHROPIC_API_KEY"\n}\n' \
-        > /root/.claude/settings.json
-
-    # Bake in the wss-profiler slash command
-    cp /skills/wss-profiler/SKILL.md /root/.claude/commands/wss-profiler.md
-
 %runscript
-    # Singularity maps the real user's $HOME, not /root, so copy baked-in
-    # Claude config to the user's home on first run.
+    # Singularity maps the real user's $HOME, not /root.
+    # Copy skills and config from the baked-in /skills/ source (not /root/.claude/
+    # which may have been overwritten by the Claude installer at build time).
     mkdir -p "$HOME/.claude/commands"
 
-    cp /root/.claude/settings.json "$HOME/.claude/settings.json"
+    printf '{\n  "apiKeyHelper": "echo $ANTHROPIC_API_KEY"\n}\n' \
+        > "$HOME/.claude/settings.json"
 
-    cp /root/.claude/commands/wss-profiler.md \
-       "$HOME/.claude/commands/wss-profiler.md"
+    cp /skills/wss-profiler/SKILL.md "$HOME/.claude/commands/wss-profiler.md"
 
     if [ -f /skills/my-code/SKILL.md ]; then
         cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
