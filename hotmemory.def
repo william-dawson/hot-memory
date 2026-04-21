@@ -8,7 +8,6 @@ From: ubuntu:24.04
 
 %environment
     export DEBIAN_FRONTEND=noninteractive
-    export PATH="/root/.local/bin:$PATH"
 
 %post
     export DEBIAN_FRONTEND=noninteractive
@@ -23,11 +22,13 @@ From: ubuntu:24.04
     && ln -sf "$PERF_BIN" /usr/local/bin/perf \
     && rm -rf /var/lib/apt/lists/*
 
-    # Claude Code — install and force HOME=/root so all config lands in /root
-    HOME=/root curl -fsSL https://claude.ai/install.sh | bash
+    # Node.js + Claude Code installed to a fixed system path
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+    apt-get install -y nodejs
+    npm install -g @anthropic-ai/claude-code
+    rm -rf /var/lib/apt/lists/*
 
-    # Symlink claude into a system path so it works regardless of $HOME at runtime
-    ln -sf /root/.local/bin/claude /usr/local/bin/claude
+    # Symlink is not needed — npm -g puts claude in /usr/bin/claude
 
 %runscript
     # Singularity maps the real user's $HOME, not /root.
