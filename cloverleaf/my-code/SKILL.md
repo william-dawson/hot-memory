@@ -1,0 +1,124 @@
+---
+description: Build/run/profile CloverLeaf in /workspace. TRIGGER when: user asks to build, run, compile, test, profile, or mentions any CloverLeaf kernel, file, or function. Invoke BEFORE starting any work.
+---
+
+# Skill: my-code
+
+## What this code is
+
+CloverLeaf is a Lagrangian-Eulerian hydrodynamics mini-app from the UK
+Mini-App Consortium. It solves the compressible Euler equations on a 2D
+Cartesian grid using an explicit, second-order method. Each timestep
+executes a fixed sequence of distinct computational kernels with different
+memory access patterns — making it ideal for working-set profiling.
+
+MPI-only (no OpenMP). The reference Fortran+C version from
+https://github.com/UK-MAC/CloverLeaf_ref.
+
+## Source layout
+
+```
+/workspace/CloverLeaf/
+  clover_leaf.f90          — main program entry point
+  hydro.f90                — main timestep loop, calls each kernel in sequence
+  kernels/
+    accelerate_kernel.f90  — updates velocity from pressure gradients
+    advec_cell_kernel.f90  — cell-centred advection
+    advec_mom_kernel.f90   — momentum advection
+    PdV_kernel.f90         — pressure-volume work (energy update)
+    flux_calc_kernel.f90   — computes fluxes from velocities
+    viscosity_kernel.f90   — artificial viscosity
+    ideal_gas_kernel.f90   — equation of state (pressure from energy/density)
+    reset_field_kernel.f90 — copies new fields to old fields
+    revert_kernel.f90      — restores fields for predictor-corrector
+    calc_dt_kernel.f90     — timestep calculation
+    field_summary_kernel.f90 — diagnostic reductions
+    update_halo_kernel.f90 — MPI halo exchange
+    *_kernel_c.c           — C implementations of each kernel (called from Fortran)
+  clover.in                — input deck (grid size, end time, test problem)
+  InputDecks/              — alternative input decks for different test problems
+```
+
+The hot kernels per timestep (in execution order) are:
+1. `ideal_gas` — equation of state
+2. `viscosity` — artificial viscosity
+3. `calc_dt` — timestep control
+4. `accelerate` — velocity update
+5. `PdV` — energy update (called twice: predictor + corrector)
+6. `flux_calc` — flux computation
+7. `advec_cell` — cell advection
+8. `advec_mom` — momentum advection
+9. `reset_field` — swap new/old fields
+
+## Build command
+
+```bash
+cd /workspace/CloverLeaf
+make COMPILER=GNU
+```
+
+Or use the fetch script which clones and builds:
+```bash
+bash /workspace/fetch_and_build.sh
+```
+
+To rebuild with WSS profiling, the Fortran main loop in `hydro.f90` must be
+instrumented. The C kernel files in `kernels/` are where the actual
+computation happens and can be instrumented with `wss_profiler.h`. Since
+the build uses both `mpif90` and `mpicc`, add profiling flags to the C
+compilation only:
+
+```bash
+make COMPILER=GNU C_OPTIONS="-DPROFILE_WSS -lpapi"
+```
+
+## Run command
+
+```bash
+cd /workspace/CloverLeaf
+mpirun -np 4 ./clover_leaf
+```
+
+The input deck `clover.in` controls grid size and number of timesteps.
+The default runs test problem 1 (Sod shock tube) for a small number of
+steps. For a more interesting profiling run, use a larger problem:
+
+```bash
+cp InputDecks/clover_bm16.in clover.in
+mpirun -np 4 ./clover_leaf
+```
+
+## Expected output / correctness check
+
+Successful runs print timestep progress to stdout and produce `clover.out`
+with detailed diagnostics. Each timestep line shows:
+
+```
+ Step  <N>  time  <t>  control  <field>  timestep  <dt>
+```
+
+The final line of `clover.out` contains a field summary with volume, mass,
+density, pressure, and kinetic energy. These values should match the
+reference output for the chosen test problem (small floating-point
+differences are acceptable).
+
+Exit code 0 indicates success.
+
+## Notes for the profiler
+
+- **MPI-only, no OpenMP.** PAPI FLOP counts (main-thread only) are
+  accurate for this code since there are no worker threads.
+- Kernels are called every timestep in a fixed order. Instrument one
+  timestep to get the per-kernel hot set. Use `WSS_BEGIN()` before and
+  `WSS_END()` after each kernel call in `hydro.f90`.
+- The interesting profiling question is which kernels share arrays and
+  which have disjoint working sets. `PdV`, `ideal_gas`, and `viscosity`
+  all touch the energy/pressure/density fields. `advec_cell` and
+  `advec_mom` touch the velocity and flux fields.
+- For GPU memory planning, the key question is: what is the maximum hot
+  set across all kernels in one timestep? That determines the minimum
+  GPU memory needed.
+- Grid size controls the working set. The default `clover.in` is small.
+  Use `clover_bm16.in` (or larger) for realistic memory measurements.
+- The code creates output files (`clover.out`, `clover.visit`) in the
+  working directory. These are small and harmless.
