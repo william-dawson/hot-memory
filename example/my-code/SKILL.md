@@ -38,6 +38,18 @@ cd /workspace
 make bench
 ```
 
+### Extending the build
+
+This is a C project built with `mpicc` via a simple Makefile.
+
+- **To add extra C compiler flags** (e.g. `-DSOME_FLAG`): `make CFLAGS+="-DSOME_FLAG" bench`
+- **To add extra linker flags** (e.g. `-lsomelib`): `make LDFLAGS+="-lsomelib" bench`
+- **To add a header include path**: `make CFLAGS+="-I/path/to/headers" bench`
+- **To include a new C header**: add `#include "header.h"` to `bench.c`; if it's
+  on a system path (`/usr/local/include`) no `-I` flag is needed.
+
+The Makefile variables `CFLAGS` and `LDFLAGS` accept appended values.
+
 ## Run command
 
 ```bash

@@ -81,7 +81,7 @@ cp -r skills/code-template my-code-skill
 $EDITOR my-code-skill/SKILL.md
 ```
 
-Fill in your source layout, build command, and run command. See `example/my-code/SKILL.md` for a complete example.
+Fill in your source layout, build command, and run command. Importantly, describe how to extend the build — how to add a new header include path, how to link an additional library, or how to add a new Fortran module. The profiling workflow needs to inject a library into your build, and Claude can only do that if the skill explains how your build system works. See `example/my-code/SKILL.md` (C) and `cloverleaf/my-code/SKILL.md` (Fortran) for complete examples.
 
 **4. Run**
 

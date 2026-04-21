@@ -32,12 +32,35 @@ TODO
 
 ## Build command
 
-The exact command to build from scratch inside the container.
-If the build accepts extra flags, say so — Claude will inject
-`-DPROFILE_WSS` and `-lpapi` here when profiling. Example:
+The exact command to build from scratch inside the container. Example:
 
 ```bash
-make clean && make EXTRA_CFLAGS="..." EXTRA_LDFLAGS="..."
+make clean && make
+```
+
+TODO
+
+### Extending the build
+
+Describe how to add a new library or include to the build. This is
+important — tools inside the container may need to inject a library
+into your link step or add a header include. Explain how your build
+system handles this.
+
+For C/C++ projects, describe how to:
+- Add extra compiler flags (e.g. `-I/path` for includes, `-DFLAG` for defines)
+- Add extra linker flags (e.g. `-lsomelib`)
+- Include a new header file
+
+For Fortran projects, describe how to:
+- Use a new Fortran module (where `.mod` files are found)
+- Link an additional static or shared library
+- Add extra compiler/linker flags
+
+Example for a Makefile-based C project:
+```
+CFLAGS can be appended with: make CFLAGS+="-I/path -DFLAG"
+LDFLAGS can be appended with: make LDFLAGS+="-lsomelib"
 ```
 
 TODO

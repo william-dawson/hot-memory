@@ -62,6 +62,23 @@ Or use the fetch script which clones and builds:
 bash /workspace/fetch_and_build.sh
 ```
 
+### Extending the build
+
+This is a mixed Fortran+C project. The Makefile uses `mpif90` for Fortran
+and `mpicc` for C. The final link is done by `mpif90`.
+
+- **To add extra Fortran compiler flags**: `make COMPILER=GNU OPTIONS="-some-flag"`
+- **To add extra C compiler flags**: `make COMPILER=GNU C_OPTIONS="-some-flag"`
+- **To link an additional library**: add the library to the `mpif90` link
+  command in the Makefile. The link step is in the `clover_leaf:` target —
+  append `.o` files and `-l` flags after the existing object list.
+- **To use a Fortran module from an external library**: ensure the `.mod`
+  file is on a path that `mpif90` searches (e.g. `/usr/local/include`),
+  add `use module_name` to the relevant `.f90` source file, and link the
+  library's `.a` or `.so` in the link step.
+- **To include a new C header**: add `#include "header.h"` to the relevant
+  `kernels/*_c.c` file; if it's on a system path no `-I` flag is needed.
+
 ## Run command
 
 ```bash
