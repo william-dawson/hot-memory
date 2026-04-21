@@ -19,7 +19,8 @@ The profiling container must have:
 - Runtime flags: `--privileged` (needed for `clear_refs` and `perf_event_open`)
 - Host may need: `sysctl kernel.perf_event_paranoid=-1`
 
-The Dockerfile in this repo is the base image. The user extends it for their code's dependencies.
+The Singularity/Apptainer definition in this repo is the primary base image
+definition. The user extends it for their code's dependencies.
 
 ---
 

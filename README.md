@@ -14,21 +14,31 @@ The idea here is to model what happens if you try to accelerate the code on a sm
 Requires a Linux amd64 host (HPC node or workstation) — perf and PAPI
 hardware counters are not available inside Docker Desktop for Mac.
 
-**1. Get the container**
+**1. Get the Singularity/Apptainer container**
+
+Clone the repo and build the SIF locally:
 
 ```bash
-wget https://github.com/william-dawson/hot-memory/releases/latest/download/hotmemory.sif
+git clone https://github.com/william-dawson/hot-memory.git
+cd hot-memory
+apptainer build hotmemory.sif hotmemory.def
+# or: singularity build hotmemory.sif hotmemory.def
 ```
 
-To me this is critical. There should be a container for all the development to live in. And inside this container is everything you need to work with the AI agent.
+If a GitHub Release has been published with `hotmemory.sif` attached, you can
+download that release asset instead. The repo does not assume a fixed direct
+download URL is always present.
+
+The container is the main delivery vehicle. It contains the profiling tools,
+the built-in profiler skill, and the Claude Code configuration needed for the
+workflow.
 
 **2. Write your code skill**
 
 Copy the template and fill it in:
 
 ```bash
-git clone https://github.com/william-dawson/hot-memory.git
-cp -r hot-memory/skills/code-template my-code-skill
+cp -r skills/code-template my-code-skill
 $EDITOR my-code-skill/SKILL.md
 ```
 
@@ -39,9 +49,9 @@ The template asks for your source layout, build command, run command, and any no
 ```bash
 export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
 
-singularity exec --bind /path/to/your/code:/workspace \
-                 --bind /path/to/my-code-skill:/skills/my-code \
-                 hotmemory.sif bash
+singularity run --bind /path/to/your/code:/workspace \
+                --bind /path/to/my-code-skill:/skills/my-code \
+                ./hotmemory.sif bash
 ```
 
 > **If perf returns "Permission denied"**, ask your sysadmin to run on the compute nodes:
@@ -88,9 +98,9 @@ code skill so you can try the whole flow immediately without writing any code.
 ```bash
 export SINGULARITYENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
 
-singularity exec --bind "$(pwd)/example":/workspace \
-                 --bind "$(pwd)/example/my-code":/skills/my-code \
-                 hotmemory.sif bash
+singularity run --bind "$(pwd)/example":/workspace \
+                --bind "$(pwd)/example/my-code":/skills/my-code \
+                ./hotmemory.sif bash
 ```
 
 Then inside the container:

@@ -53,8 +53,8 @@ No manual flag injection is needed.
 mpirun --allow-run-as-root -np 2 ./bench
 ```
 
-`--allow-run-as-root` is required inside the Docker container (which runs as
-root). Outside a container, drop that flag.
+`--allow-run-as-root` is required when running as root inside the profiling
+container. Outside a container, drop that flag.
 
 Successful run prints one line to stdout and exits 0:
 ```
