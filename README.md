@@ -58,7 +58,21 @@ sysctl kernel.perf_event_paranoid=0
 
 ## Quickstart
 
-**1. Build the container**
+**1. Get the container**
+
+Download a pre-built SIF from the [latest release](https://github.com/william-dawson/hot-memory/releases/latest):
+
+```bash
+# For amd64:
+gh release download --repo william-dawson/hot-memory --pattern "hotmemory-amd64.sif"
+
+# For arm64 (e.g. NVIDIA Grace):
+gh release download --repo william-dawson/hot-memory --pattern "hotmemory-arm64.sif"
+
+mv hotmemory-*.sif hotmemory.sif
+```
+
+Or build from source:
 
 ```bash
 git clone https://github.com/william-dawson/hot-memory.git
