@@ -74,22 +74,19 @@ export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
 export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
 ```
 
-**3. Write your code skill**
+**3. Point it at your code**
 
 ```bash
-cp -r skills/code-template my-code-skill
-$EDITOR my-code-skill/SKILL.md
+./hotmemory.sh /path/to/your/code /path/to/your/code
 ```
 
-Fill in your source layout, build command, and run command. Importantly, describe how to extend the build — how to add a new header include path, how to link an additional library, or how to add a new Fortran module. The profiling workflow needs to inject a library into your build, and Claude can only do that if the skill explains how your build system works. See `example/my-code/SKILL.md` (C) and `cloverleaf/my-code/SKILL.md` (Fortran) for complete examples.
+If you already have a code skill, mount it as the second argument. If not, just mount your code directory for both — once inside, ask Claude:
 
-**4. Run**
+*"Generate a skill file for this project."*
 
-```bash
-./hotmemory.sh /path/to/your/code /path/to/my-code-skill
-```
+Claude will examine your source tree, figure out the build system, try building, and produce a SKILL.md describing your code. Review it, then you're ready to profile.
 
-**5. Start Claude Code**
+Inside the container, start Claude Code:
 
 ```bash
 claude
