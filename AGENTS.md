@@ -44,6 +44,8 @@ Skills are markdown files placed in `~/.claude/commands/` so Claude Code can inv
 
 Claude is the glue. It reads both and synthesises. Neither skill references the other.
 
+**Strict isolation rule:** The code skill must contain ONLY knowledge about the user's code — source layout, build commands, run commands, and domain-specific notes. It must NOT reference the profiler, WSS macros, PAPI, `-DPROFILE_WSS`, or any instrumentation details. Similarly, the profiler skill must NOT reference any specific user code. Claude synthesises the two at runtime. If you find profiler-specific instructions leaking into a code skill (or vice versa), that is a bug — remove them.
+
 **The code-template skill** (`skills/code-template/SKILL.md`) is the blank form users fill in. Study `example/my-code/SKILL.md` for a fully correct example — it is the canonical reference for what Claude expects to find.
 
 ---
