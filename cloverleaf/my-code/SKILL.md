@@ -106,11 +106,25 @@ Exit code 0 indicates success.
 
 ## Notes for the profiler
 
+- **This is a Fortran code.** Use the Fortran bindings (`wss_profiler_f.c`
+  and `wss_profiler_mod.f90` from `/usr/local/include/`), not the C header
+  directly. See the "Fortran codes" section in the wss-profiler skill for
+  the full procedure.
 - **MPI-only, no OpenMP.** PAPI FLOP counts (main-thread only) are
   accurate for this code since there are no worker threads.
+- The main timestep loop is in `hydro.f90`. Instrument it by adding
+  `use wss_profiler_mod` and wrapping each kernel call:
+  ```fortran
+  call wss_begin()
+  call accelerate(...)
+  call wss_end_named("accelerate")
+  ```
+- To build with profiling, compile `wss_profiler_f.c` with
+  `mpicc -DPROFILE_WSS -c wss_profiler_f.c -o wss_profiler_f.o` and
+  compile `wss_profiler_mod.f90` with `mpif90 -c wss_profiler_mod.f90`,
+  then add both `.o` files and `-lpapi` to the final link step.
 - Kernels are called every timestep in a fixed order. Instrument one
-  timestep to get the per-kernel hot set. Use `WSS_BEGIN()` before and
-  `WSS_END()` after each kernel call in `hydro.f90`.
+  timestep to get the per-kernel hot set.
 - The interesting profiling question is which kernels share arrays and
   which have disjoint working sets. `PdV`, `ideal_gas`, and `viscosity`
   all touch the energy/pressure/density fields. `advec_cell` and
