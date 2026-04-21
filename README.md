@@ -62,25 +62,16 @@ PAPI hardware counters (FLOPs, load/store counts) only instrument the **main thr
 
 ## Quickstart
 
-**1. Get the container**
-
-Download a pre-built SIF from the [latest release](https://github.com/william-dawson/hot-memory/releases/latest):
-
-```bash
-# For amd64:
-wget https://github.com/william-dawson/hot-memory/releases/latest/download/hotmemory-amd64.sif -O hotmemory.sif
-
-# For arm64 (e.g. NVIDIA Grace):
-wget https://github.com/william-dawson/hot-memory/releases/latest/download/hotmemory-arm64.sif -O hotmemory.sif
-```
-
-Or build from source:
+**1. Get the repo**
 
 ```bash
 git clone https://github.com/william-dawson/hot-memory.git
 cd hot-memory
-singularity build --fakeroot hotmemory.sif hotmemory.def
 ```
+
+The wrapper script `hotmemory.sh` will automatically download the correct
+pre-built container (amd64 or arm64) on first run. To build from source
+instead, run `singularity build --fakeroot hotmemory.sif hotmemory.def`.
 
 **2. Set your credentials**
 
