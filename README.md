@@ -54,6 +54,10 @@ For the full workflow, ask your sysadmin to set on the compute nodes:
 sysctl kernel.perf_event_paranoid=0
 ```
 
+### OpenMP limitation
+
+PAPI hardware counters (FLOPs, load/store counts) only instrument the **main thread**. OpenMP worker thread activity is not counted. The hot-byte measurement (`/proc/self/smaps`) *is* process-wide and includes all threads — so hot MB is accurate for OpenMP codes, but FLOP counts and total bytes accessed will be undercounted. For OpenMP codes, treat FLOP-derived metrics as lower bounds and rely primarily on hot bytes for GPU memory planning.
+
 ---
 
 ## Quickstart

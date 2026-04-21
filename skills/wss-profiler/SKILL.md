@@ -125,6 +125,11 @@ Which ones should I dig into?
 ### When to use
 The user has identified specific kernels (from Phase 1 or from domain knowledge) and wants hot byte count + FLOP count.
 
+### OpenMP warning
+**PAPI counters (FLOPs, load/store counts) only instrument the main thread.** OpenMP worker threads are NOT counted. The hot-byte measurement (`/proc/self/smaps`) IS process-wide and includes all threads. For OpenMP codes:
+- Hot MB is accurate — use it for GPU memory planning.
+- FLOP counts, total bytes accessed, and all derived ratios (FLOP/byte, reuse factor) are **lower bounds only**. Always state this when reporting results for OpenMP codes.
+
 ### What the header does
 
 `wss_profiler.h` (in this repo) provides three macros:
