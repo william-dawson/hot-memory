@@ -22,7 +22,7 @@ host permits:
 | Feature | Requires | Without it |
 |---------|----------|------------|
 | Hot-byte measurement (`/proc/clear_refs`) | `--fakeroot` or root | Not available |
-| Hotspot discovery (`perf record`) | `perf_event_paranoid` ≤ 1 | Claude falls back to `MPI_Wtime()` instrumentation |
+| Hotspot discovery (`perf record`) | `perf_event_paranoid` ≤ 1 | Phase 1 unavailable; skip to Phase 2 if you know which kernels to target |
 | FLOP counting (PAPI) | `perf_event_paranoid` ≤ 1 | FLOPs reported as 0; hot-byte measurement still works |
 
 For the full workflow, ask your sysadmin to set on the compute nodes:
@@ -79,11 +79,10 @@ Ask:
 - *"Measure the working set of stencil_apply."* → Claude instruments the kernel, rebuilds, runs, reports hot MB + FLOP/byte.
 - *"Will this fit on an RTX 5070?"* → Claude uses the measured hot sets to reason about GPU memory requirements.
 
-> **Note:** If `perf` returns "Permission denied", the workflow will still
-> work — Claude will use timing-based instrumentation instead for hotspot
-> discovery, and hot-byte measurement works regardless. FLOP counts will
-> be reported as 0. For the full workflow including `perf` and FLOP counts,
-> ask your sysadmin to run: `sysctl kernel.perf_event_paranoid=-1`
+> **Note:** If `perf` returns "Permission denied", Phase 1 (hotspot discovery)
+> is unavailable but Phase 2 (hot-byte measurement) still works if you already
+> know which kernels to target. FLOP counts will be reported as 0. For the full
+> workflow, ask your sysadmin to run: `sysctl kernel.perf_event_paranoid=-1`
 
 ---
 

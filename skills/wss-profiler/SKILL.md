@@ -56,22 +56,9 @@ perf report -n --stdio --no-children -i /tmp/perf.data 2>/dev/null | head -60
 
 5. **Report to the user**: list the top functions by % samples, note which are in their code vs. MPI/OpenMP library, and suggest which ones to instrument in Phase 2.
 
-### Fallback when perf is unavailable
+### If perf is unavailable
 
-If `perf record` fails with "Permission denied" (`perf_event_paranoid` too high), fall back to **manual timing instrumentation**:
-
-1. Add `MPI_Wtime()` calls around each suspected kernel in the user's code.
-2. Print elapsed time per kernel per rank.
-3. Report the results as wall-clock time per kernel.
-
-This gives the same information as perf (which kernels are hot) without hardware counter access. It requires a recompile but no kernel privileges.
-
-```c
-double t0 = MPI_Wtime();
-stencil_apply(grid, nx, ny, nz);
-double t1 = MPI_Wtime();
-if (rank == 0) fprintf(stderr, "stencil_apply: %.3f s\n", t1 - t0);
-```
+If `perf record` fails with "Permission denied" (`perf_event_paranoid` too high), inform the user that Phase 1 requires `sysctl kernel.perf_event_paranoid=-1` set by a sysadmin. Do not attempt to instrument the user's code with timing calls — the code may be too complex for reliable automated instrumentation. Phase 2 (hot-byte measurement) can still proceed if the user already knows which kernels to target.
 
 ### What perf measures
 - Wall-clock samples on the profiled rank/process.
