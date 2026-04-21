@@ -113,7 +113,7 @@ Ask:
 
 ## Try it with the built-in example
 
-The `example/` directory contains a synthetic MPI benchmark with two kernels deliberately at opposite ends of the spectrum — `stream_kernel` is memory-bound (~768 MB hot, near-zero FLOP/byte) and `compute_kernel` is compute-bound (~2 MB hot, ~128 FLOP/byte).
+The `example/` directory contains a synthetic MPI benchmark with two kernels that split memory roughly 75/25 — `stream_kernel` is memory-bound (~96 MB hot at 4 ranks) and `compute_kernel` is compute-bound (~32 MB hot). Together they use about 128 MB per rank, but neither touches all of it — exactly the scenario where hot-set profiling is more useful than peak allocation.
 
 ```bash
 ./hotmemory.sh ./example ./example/my-code

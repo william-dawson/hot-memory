@@ -26,10 +26,10 @@ Key functions:
 
 - `main()` — MPI init, allocation, distributes work, calls both kernels
 - `stream_kernel(a, b, c, n)` — writes `c[i] = a[i] + b[i]` over the local
-  portion of 128 M doubles total; three arrays split across ranks; with 4 ranks
-  each rank touches ~96 MB per array (~288 MB total) — memory-bandwidth-bound
-- `compute_kernel(x, n, iters)` — 256 K doubles per rank, 1000 multiply-add
-  iterations per element; ~256 M FLOPs on a 2 MB working set — compute-bound
+  portion of 16 M doubles total; three arrays split across ranks; with 4 ranks
+  each rank touches ~8 MB per array (~24 MB total) — memory-bandwidth-bound
+- `compute_kernel(x, n, iters)` — 4 M doubles per rank, 100 multiply-add
+  iterations per element — compute-bound
 
 ## Build command
 
@@ -71,9 +71,9 @@ value depends on the number of ranks.
 - **This is a C code** using MPI and OpenMP.
 - Both kernels are called once per run (no time-stepping loop).
 - `stream_kernel` touches three large arrays — memory-bandwidth-bound.
-  Hot MB scales with rank count (~768 MB at -np 4, ~384 MB at -np 8).
-- `compute_kernel` has a small, constant working set (~2 MB) regardless
-  of rank count — compute-bound.
+  Hot MB scales with rank count (~96 MB at -np 4, ~48 MB at -np 8).
+- `compute_kernel` has a ~32 MB working set regardless of rank count —
+  compute-bound.
 - There is an `MPI_Allreduce` after each kernel for synchronisation.
 - Arrays are pre-initialised before the kernel runs, so all pages are
   already mapped.

@@ -29,9 +29,9 @@
 #include <omp.h>
 #include "wss_profiler.h"
 
-#define STREAM_N_TOTAL (128 * 1024 * 1024L)  /* 128M doubles total = 1 GB per array */
-#define COMPUTE_N      (256 * 1024)           /* 256K doubles per rank = 2 MB */
-#define COMPUTE_ITERS  1000
+#define STREAM_N_TOTAL (16 * 1024 * 1024L)   /* 16M doubles total = 128 MB per array */
+#define COMPUTE_N      (4 * 1024 * 1024)     /* 4M doubles per rank = 32 MB */
+#define COMPUTE_ITERS  100                    /* fewer iters to keep runtime short */
 
 /* Memory-bandwidth-bound: sweeps local portion of array once. */
 static void stream_kernel(double *a, double *b, double *c, long n)
@@ -117,13 +117,17 @@ int main(int argc, char **argv)
     /*
      * Expected output (rank 0, approximate, with -np 4):
      *
-     * [WSS] stream_kernel     ~768.0 MB hot   ~0.000 GFLOP   ~0.00 FLOP/byte
-     *   (3 arrays × 256 MB/rank = 768 MB; 1 FLOP per 3 reads ≈ tiny)
-     *   Hot MB scales down with more ranks: ~384 MB at -np 8, etc.
+     * [WSS] stream_kernel      ~96.0 MB hot   ~0.000 GFLOP   ~0.00 FLOP/byte
+     *   (3 arrays × 32 MB/rank = 96 MB; 1 FLOP per 3 reads ≈ tiny)
+     *   Hot MB scales down with more ranks: ~48 MB at -np 8, etc.
      *
-     * [WSS] compute_kernel      ~2.0 MB hot   ~0.256 GFLOP  ~128.0 FLOP/byte
-     *   (256 K doubles × 1000 iters ≈ 256 M FLOPs; 2 MB working set)
+     * [WSS] compute_kernel     ~32.0 MB hot   ~3.2 GFLOP    ~100 FLOP/byte
+     *   (4M doubles × 100 iters × 2 FLOPs = 800M FLOPs; 32 MB working set)
      *   Hot MB stays constant regardless of rank count.
+     *
+     * At -np 4 the split is roughly 75/25 (stream vs compute),
+     * while peak allocation is ~128 MB. This demonstrates that
+     * individual kernels use less memory than total allocation.
      *
      * Note: FLOP counts depend on PAPI availability and OpenMP thread
      * counting (main thread only). Hot MB includes 4 KB page rounding
