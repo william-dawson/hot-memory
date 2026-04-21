@@ -34,11 +34,10 @@ From: ubuntu:24.04
     # Symlink is not needed — npm -g puts claude in /usr/bin/claude
 
 %runscript
-    # Singularity mounts the host $HOME, which may contain a claude install
-    # that points to host paths. Override PATH to use only container binaries.
+    # Run with --no-home --contain so the host $HOME is not mounted.
+    # $HOME will be /root inside the container, which is clean and writable.
     export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-    # Copy skills from the baked-in /skills/ source on every run.
     mkdir -p "$HOME/.claude/commands"
 
     cp /skills/wss-profiler/SKILL.md "$HOME/.claude/commands/wss-profiler.md"
