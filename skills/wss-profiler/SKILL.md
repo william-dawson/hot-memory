@@ -125,21 +125,11 @@ When built without `-DPROFILE_WSS`, all macros are empty — zero overhead, no c
 
 ### Fortran codes
 
-For Fortran codes, use the Fortran bindings instead of the C header. The
-container ships `wss_profiler_f.c` (C wrapper) and `wss_profiler_mod.f90`
-(Fortran module) at `/usr/local/include/`.
+For Fortran codes, use the pre-compiled Fortran bindings. The container
+ships a static library (`libwss_profiler.a`) and Fortran module file
+(`wss_profiler_mod.mod`) at `/usr/local/lib/` and `/usr/local/include/`.
 
-1. **Copy the Fortran bindings** into the source directory:
-   ```bash
-   cp /usr/local/include/wss_profiler_f.c /usr/local/include/wss_profiler_mod.f90 .
-   ```
-
-2. **Compile the C wrapper**:
-   ```bash
-   mpicc -DPROFILE_WSS -c wss_profiler_f.c -o wss_profiler_f.o -lpapi
-   ```
-
-3. **Add `use wss_profiler_mod`** and instrument the Fortran code:
+1. **Add `use wss_profiler_mod`** and instrument the Fortran code:
    ```fortran
    use wss_profiler_mod
    ! ... after MPI_Init:
@@ -150,15 +140,17 @@ container ships `wss_profiler_f.c` (C wrapper) and `wss_profiler_mod.f90`
    call wss_end_named("some_kernel")
    ```
 
-4. **Compile the Fortran module first**, then link with the C wrapper object:
-   ```bash
-   mpif90 -c wss_profiler_mod.f90
-   mpif90 ... wss_profiler_mod.o wss_profiler_f.o -lpapi -o executable
+2. **Link with the pre-compiled library** by adding to the final link step:
    ```
+   -lwss_profiler -lpapi
+   ```
+   The library and module are in standard system paths (`/usr/local/lib`
+   and `/usr/local/include`) so no `-L` or `-I` flags are needed.
 
-   Adapt to the project's build system. The key requirement is that
-   `wss_profiler_f.o` and `wss_profiler_mod.o` are linked into the final
-   binary with `-lpapi`.
+   Adapt to the project's build system. For example with a Makefile:
+   ```
+   LDFLAGS += -lwss_profiler -lpapi
+   ```
 
 4. **Rebuild** with PAPI linked:
    ```
