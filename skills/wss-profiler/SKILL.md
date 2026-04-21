@@ -57,6 +57,14 @@ definition. The user extends it for their code's dependencies.
 
 ---
 
+## Prerequisite: Confirm baseline build and run
+
+Before profiling anything, read the `/my-code` skill, build the code, and
+run it. Verify it exits cleanly with the expected output. Do not proceed
+until the baseline build and run are confirmed working.
+
+---
+
 ## Phase 0: Capability check
 
 ### When to use
