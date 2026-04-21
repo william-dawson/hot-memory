@@ -75,7 +75,7 @@ cp -r skills/code-template my-code-skill
 $EDITOR my-code-skill/SKILL.md
 ```
 
-Fill in your source layout, build command, run command, and which functions are the hot kernels. See `example/my-code/SKILL.md` for a complete example.
+Fill in your source layout, build command, and run command. See `example/my-code/SKILL.md` for a complete example.
 
 **4. Run**
 
