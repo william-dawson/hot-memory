@@ -6,7 +6,7 @@ LDFLAGS =
 # wss_profiler.h is installed at /usr/local/include inside the container,
 # so no -I flag is needed.
 profile: CFLAGS  += -DPROFILE_WSS
-profile: LDFLAGS += -lpapi
+profile: LDFLAGS += -lwss_profiler -lpapi
 profile: bench
 
 # Build without profiling (macros compile away to nothing)

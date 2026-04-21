@@ -6,8 +6,10 @@
  *   1. #include "wss_profiler.h" in the file containing main().
  *   2. Call WSS_INIT() once after MPI_Init().
  *   3. Wrap each kernel call with WSS_BEGIN() / WSS_END("kernel_name").
- *   4. Build with: -DPROFILE_WSS -lpapi
+ *   4. Build with: -DPROFILE_WSS -lwss_profiler -lpapi
  *      (Without -DPROFILE_WSS, all macros compile away to nothing.)
+ *      The header uses extern declarations; the definitions are in
+ *      wss_profiler.c, compiled into libwss_profiler.a in the container.
  *
  * Output (to stderr, rank 0 only):
  *   [WSS] kernel_name     512.0 MB hot   1024.0 MB accessed   0.480 GFLOP   0.98 FLOP/byte-hot   0.47 FLOP/byte-accessed
@@ -38,14 +40,18 @@
 #include <papi.h>
 
 /* ── internal state ─────────────────────────────────────────────────────── */
-
-static int    _wss_rank       = -1;
-static int    _wss_eventset   = PAPI_NULL;
-static int    _wss_nfp_events = 0;   /* how many FP counters are live */
-static int    _wss_nmem_events = 0;  /* how many load/store counters are live */
-static int    _wss_nevents    = 0;   /* total counters: FP + mem */
-static int    _wss_papi_ok    = 0;   /* PAPI library initialized */
-static int    _wss_active     = 0;   /* 1 between WSS_BEGIN and WSS_END */
+/*
+ * Declared extern so all translation units share one copy.
+ * The definitions live in wss_profiler.c, compiled into libwss_profiler.a.
+ * Link with: -lwss_profiler -lpapi
+ */
+extern int    _wss_rank;
+extern int    _wss_eventset;
+extern int    _wss_nfp_events;   /* how many FP counters are live */
+extern int    _wss_nmem_events;  /* how many load/store counters are live */
+extern int    _wss_nevents;      /* total counters: FP + mem */
+extern int    _wss_papi_ok;      /* PAPI library initialized */
+extern int    _wss_active;       /* 1 between WSS_BEGIN and WSS_END */
 
 /* ── internal helpers (defined inline to avoid duplicate-symbol errors) ─── */
 

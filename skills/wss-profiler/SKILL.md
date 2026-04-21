@@ -229,7 +229,7 @@ When built without `-DPROFILE_WSS`, all macros are empty — zero overhead, no c
 
 ### Step-by-step
 
-1. **Copy `wss_profiler.h`** into the user's source directory (or wherever their Makefile can find it with `-I.`).
+1. **No file copying needed.** `wss_profiler.h` is installed at `/usr/local/include` in the container. Include it with `#include "wss_profiler.h"` (no `-I` flag needed) and link with `-lwss_profiler -lpapi`.
 
 2. **Initialise at the top level, instrument wherever needed.**
    `WSS_INIT()` must be called once in the file containing `main()` (or
@@ -366,11 +366,11 @@ ships a static library (`libwss_profiler.a`) and Fortran module file
    LDFLAGS += -lwss_profiler -lpapi
    ```
 
-4. **Rebuild** with PAPI linked:
+4. **Rebuild** with the profiler linked:
    ```
-   make EXTRA_CFLAGS="-DPROFILE_WSS" EXTRA_LDFLAGS="-lpapi"
+   make EXTRA_CFLAGS="-DPROFILE_WSS" EXTRA_LDFLAGS="-lwss_profiler -lpapi"
    ```
-   `wss_profiler.h` is installed at `/usr/local/include` in the container — no `-I` flag needed. Adapt the make invocation to the user's actual build system (CMake, manual gcc invocation, etc.).
+   Adapt the make invocation to the user's actual build system (CMake, manual gcc invocation, etc.).
 
 5. **Run normally** (same command as always):
    ```bash
@@ -442,7 +442,6 @@ The key insights to highlight for the user:
 After profiling, **revert the instrumentation**:
 - Remove `#include "wss_profiler.h"` and `WSS_INIT()` from main.
 - Remove all `WSS_BEGIN()` / `WSS_END()` calls.
-- Remove `wss_profiler.h` from the source directory.
 - Rebuild clean.
 
 Alternatively, leave the macros in place guarded by `-DPROFILE_WSS` — without that flag they compile away to nothing.

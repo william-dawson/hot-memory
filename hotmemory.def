@@ -5,6 +5,7 @@ From: ubuntu:24.04
     skills/wss-profiler/SKILL.md      /skills/wss-profiler/SKILL.md
     wss_profiler/wss_profiler.h       /skills/wss-profiler/wss_profiler.h
     wss_profiler/wss_profiler.h       /usr/local/include/wss_profiler.h
+    wss_profiler/wss_profiler.c       /usr/local/include/wss_profiler.c
     wss_profiler/wss_profiler_f.c     /usr/local/include/wss_profiler_f.c
     wss_profiler/wss_profiler_mod.f90 /usr/local/include/wss_profiler_mod.f90
 
@@ -41,11 +42,12 @@ From: ubuntu:24.04
     # Pre-compile the WSS profiler library (C wrapper + Fortran module)
     # so users just link with -lwss_profiler -lpapi, no source copying needed.
     cd /usr/local/include
+    mpicc -DPROFILE_WSS -c wss_profiler.c   -o wss_profiler.o
     mpicc -DPROFILE_WSS -c wss_profiler_f.c -o wss_profiler_f.o
     mpif90 -c wss_profiler_mod.f90 -o wss_profiler_mod.o
-    ar rcs /usr/local/lib/libwss_profiler.a wss_profiler_f.o wss_profiler_mod.o
+    ar rcs /usr/local/lib/libwss_profiler.a wss_profiler.o wss_profiler_f.o wss_profiler_mod.o
     cp wss_profiler_mod.mod /usr/local/include/ 2>/dev/null || true
-    rm -f wss_profiler_f.o wss_profiler_mod.o
+    rm -f wss_profiler.o wss_profiler_f.o wss_profiler_mod.o
 
     # Bake container setup into bash profile so it runs even when
     # Singularity falls back to sandbox extraction (which skips %runscript).
