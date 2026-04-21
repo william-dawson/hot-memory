@@ -1,11 +1,9 @@
-# hot-memory
+# Hot Memory
 
+> [!NOTE]
 This repository is a model of what an outsourced AI-agent deliverable should look like. The idea: when you hire someone to build a tool, they should ship it in a container that drops you straight into a vibe coding environment. Everything you need — the tool, its dependencies, and the skill files that teach your AI agent how to use it — is right there. You type `claude` and start working.
 
-The specific tool here is an HPC performance profiler. Given an MPI/OpenMP C/C++/Fortran code, it answers two questions:
-
-1. **Where is time going?** (sampling via `perf`)
-2. **For a given kernel: how many unique bytes are hot, and how many FLOPs does it execute?** (instrumentation via `/proc/clear_refs` + PAPI)
+The specific tool here is an HPC performance profiler. Given an MPI/OpenMP C/C++/Fortran code, it answers one key research question: for the key kernels ina  program, how many unique bytes are **hot**.
 
 The motivation is GPU memory planning. Before porting a code to a small-memory GPU (like a consumer RTX), you need to know not just total allocation but the *hot working set* of each kernel. Total allocation is always a pessimistic overestimate — no single kernel touches all of it. The hot set tells you what actually needs to fit on the device, what can stay resident between kernels, and what must be swapped.
 
@@ -23,22 +21,23 @@ The container is the delivery vehicle. Inside it:
 
 ```
 /skills/
-  wss-profiler/       ← baked into the image by the vendor
-    SKILL.md              profiling methodology, interpretation, GPU memory reasoning
-    wss_profiler.h        C header installed at /usr/local/include
-  my-code/            ← mounted by you at runtime
-    SKILL.md              your code's build/run commands and kernel layout
+  wss-profiler/                 ← baked into the image
+    SKILL.md                      profiling methodology, interpretation, GPU memory reasoning
+    wss_profiler/*.h/*.f90/etc    source files
+  my-code/                      ← mounted by you at runtime
+    SKILL.md                      your code's build/run commands and kernel layout
 ```
 
-**Skill files** are the key abstraction. They're markdown documents that teach Claude Code how to do something. One skill describes the profiling methodology (shipped by the vendor). The other describes your specific code (written by you from a template). Neither references the other — Claude reads both and synthesises.
+Skill files are the key abstraction. One skill describes the profiling methodology (shipped by us). The other describes your specific code (written by you alone or with the help of AI). Neither references the other — Claude reads both and synthesises.
 
-This means the vendor doesn't need to know your code, and you don't need to understand the profiling methodology. You write a short description of your code, mount it into the container, and Claude does the rest.
+> [!NOTE]
+> These tools bridge the knowledge gap. The developer of the profiling tool writes a skill so an agent knows how to use the tool. You help prepare the skill file related to the code to apply it to. An agent helps with both these tasks.
 
 ---
 
 ## Requirements
 
-- Linux host, `amd64` or `aarch64` (e.g. NVIDIA Grace / Neoverse V2)
+- Linux host
 - Singularity or Apptainer
 - Amazon Bedrock access (for Claude Code)
 
