@@ -153,4 +153,22 @@ The skill file is the authoritative, actionable description of the methodology. 
 - **WSS measures rank 0 only.** The profiler assumes roughly symmetric workload across ranks. For load-imbalanced codes, the measurements may undercount the busiest rank.
 - **PAPI only counts the main thread.** OpenMP worker threads are not instrumented. FLOP counts will be low for heavily-threaded kernels.
 - **smaps noise floor is a few MB.** For kernels with small working sets (<10 MB), the hot-byte count includes stack, code segment, and library pages. Interpret with caution; for large kernels it's negligible.
-- **`wss_profiler.h` is included in `example/bench.c` as `"wss_profiler.h"`** (relative path), but also installed at `/usr/local/include/wss_profiler.h`. The Makefile in the example does not use `-I..`; it relies on the system include path inside the container.
+---
+
+## Claude Code setup in the container
+
+**Installation approach**: Claude Code is installed via `npm install -g @anthropic-ai/claude-code` into `/usr/bin/claude`, not via the official install script. The install script tries to symlink into `$HOME/.local/share/claude/`, which during `--fakeroot` builds resolves to the host user's home on the host filesystem — the binary ends up outside the SIF and is inaccessible at runtime.
+
+**HOME isolation**: `%environment` sets `HOME=/tmp/claude-home` and `PATH` to system paths only. This prevents Claude from picking up the host user's broken symlinks, stale `~/.claude/settings.json`, or interfering dotfiles. The `%runscript` then populates `/tmp/claude-home/.claude/commands/` with the baked-in skills.
+
+**Why not `--no-home`?** Using `--no-home` flag causes Claude Code to hang on startup — likely a pseudo-terminal issue inside the Singularity sandbox. Setting `HOME=/tmp/claude-home` in `%environment` is cleaner and avoids this.
+
+**Bedrock auth**: The container is configured to use Amazon Bedrock via Claude Code's native Bedrock mode (`CLAUDE_CODE_USE_BEDROCK=1`). The user supplies `AWS_BEARER_TOKEN_BEDROCK` and `OPENAI_API_KEY` at runtime as `SINGULARITYENV_*` variables, which Singularity converts to regular env vars inside the container. These are baked into `%environment` along with `OPENAI_BASE_URL` and `AWS_REGION`.
+
+**If modifying Claude Code setup**: 
+- Do NOT use the official install script; it will break the SIF.
+- Ensure `PATH` in `%environment` comes before any system paths that might have old Claude binaries.
+- Test with `which claude`, `claude --version`, and a simple claude prompt to verify terminal interaction works.
+- If Claude hangs on startup, it's likely `/proc` or `/dev` access — check that no restrictive container flags like `--contain` are in use.
+
+---
