@@ -9,6 +9,12 @@ The specific tool here is an HPC performance profiler. Given an MPI/OpenMP C/C++
 
 The motivation is GPU memory planning. Before porting a code to a small-memory GPU (like a consumer RTX), you need to know not just total allocation but the *hot working set* of each kernel. Total allocation is always a pessimistic overestimate — no single kernel touches all of it. The hot set tells you what actually needs to fit on the device, what can stay resident between kernels, and what must be swapped.
 
+### How we measure "hot" memory
+
+Before a kernel runs, we clear the Linux "Referenced" bit on every memory page by writing to `/proc/self/clear_refs`. After the kernel finishes, we read `/proc/self/smaps` and sum the `Referenced` fields — that's the number of unique 4 KB pages the kernel actually touched. This is a direct measurement at the OS level: no sampling, no estimation, no compiler instrumentation. The only approximation is 4 KB page granularity (if a kernel touches 1 byte on a page, the whole 4 KB counts).
+
+This gives a per-kernel hot working set in MB, which is the fundamental input for GPU memory planning: if the heaviest kernel's hot set fits in device memory, the whole code can run on the GPU without swapping.
+
 ---
 
 ## How the delivery model works
