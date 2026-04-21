@@ -26,13 +26,15 @@ From: ubuntu:24.04
     # Claude Code
     curl -fsSL https://claude.ai/install.sh | bash
 
+    # The Claude installer may create or reset /root/.claude — write our
+    # config last so it is not overwritten.
+    mkdir -p /root/.claude/commands
+
     # API key helper — reads ANTHROPIC_API_KEY from the environment at runtime
-    mkdir -p /root/.claude
     printf '{\n  "apiKeyHelper": "echo $ANTHROPIC_API_KEY"\n}\n' \
         > /root/.claude/settings.json
 
     # Bake in the wss-profiler slash command
-    mkdir -p /root/.claude/commands
     cp /skills/wss-profiler/SKILL.md /root/.claude/commands/wss-profiler.md
 
 %runscript
@@ -40,9 +42,7 @@ From: ubuntu:24.04
     # Claude config to the user's home on first run.
     mkdir -p "$HOME/.claude/commands"
 
-    if [ ! -f "$HOME/.claude/settings.json" ]; then
-        cp /root/.claude/settings.json "$HOME/.claude/settings.json"
-    fi
+    cp /root/.claude/settings.json "$HOME/.claude/settings.json"
 
     cp /root/.claude/commands/wss-profiler.md \
        "$HOME/.claude/commands/wss-profiler.md"
