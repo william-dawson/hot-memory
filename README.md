@@ -59,13 +59,16 @@ sysctl kernel.perf_event_paranoid=0
 git clone https://github.com/william-dawson/hot-memory.git
 cd hot-memory
 singularity build --fakeroot hotmemory.sif hotmemory.def
-# or: apptainer build --fakeroot hotmemory.sif hotmemory.def
-# (omit --fakeroot if you have root)
 ```
 
-If a GitHub Release has been published with `hotmemory.sif` attached you can download that instead.
+**2. Set your credentials**
 
-**2. Write your code skill**
+```bash
+export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
+export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
+```
+
+**3. Write your code skill**
 
 ```bash
 cp -r skills/code-template my-code-skill
@@ -74,19 +77,13 @@ $EDITOR my-code-skill/SKILL.md
 
 Fill in your source layout, build command, run command, and which functions are the hot kernels. See `example/my-code/SKILL.md` for a complete example.
 
-**3. Run**
+**4. Run**
 
 ```bash
-export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
-export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
-
-singularity run --fakeroot --pwd /workspace \
-                --bind /path/to/your/code:/workspace \
-                --bind /path/to/my-code-skill:/skills/my-code \
-                ./hotmemory.sif bash
+./hotmemory.sh /path/to/your/code /path/to/my-code-skill
 ```
 
-**4. Start Claude Code**
+**5. Start Claude Code**
 
 ```bash
 claude
@@ -94,9 +91,9 @@ claude
 
 Ask:
 
-- *"Find the hotspots in my code."* → Claude runs `perf`, reports top functions by % wall-clock time.
-- *"Measure the working set of stencil_apply."* → Claude instruments the kernel, rebuilds, runs, reports hot MB + FLOP/byte.
-- *"Will this fit on an RTX 5070?"* → Claude uses the measured hot sets to reason about GPU memory requirements.
+- *"Find the hotspots in my code."*
+- *"Measure the working set of stencil_apply."*
+- *"Will this fit on an RTX 5070?"*
 
 > **Note:** If `perf` returns "Permission denied", Phase 1 (hotspot discovery)
 > is unavailable but Phase 2 (hot-byte measurement) still works if you already
@@ -107,16 +104,10 @@ Ask:
 
 ## Try it with the built-in example
 
-The `example/` directory contains a synthetic MPI benchmark with two kernels deliberately at opposite ends of the spectrum — `stream_kernel` is memory-bound (~768 MB hot, near-zero FLOP/byte) and `compute_kernel` is compute-bound (~2 MB hot, ~128 FLOP/byte). Use it to verify the whole stack works before profiling your own code.
+The `example/` directory contains a synthetic MPI benchmark with two kernels deliberately at opposite ends of the spectrum — `stream_kernel` is memory-bound (~768 MB hot, near-zero FLOP/byte) and `compute_kernel` is compute-bound (~2 MB hot, ~128 FLOP/byte).
 
 ```bash
-export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
-export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
-
-singularity run --fakeroot --pwd /workspace \
-                --bind "$(pwd)/example":/workspace \
-                --bind "$(pwd)/example/my-code":/skills/my-code \
-                ./hotmemory.sif bash
+./hotmemory.sh ./example ./example/my-code
 ```
 
 Inside the container:
@@ -137,10 +128,7 @@ Try asking:
 For a more realistic test, the `cloverleaf/` directory contains a skill and fetch script for [CloverLeaf](https://github.com/UK-MAC/CloverLeaf_ref), a Lagrangian-Eulerian hydrodynamics mini-app with 9 distinct kernels per timestep — each with different memory access patterns.
 
 ```bash
-singularity run --fakeroot --pwd /workspace \
-                --bind "$(pwd)/cloverleaf":/workspace \
-                --bind "$(pwd)/cloverleaf/my-code":/skills/my-code \
-                ./hotmemory.sif bash
+./hotmemory.sh ./cloverleaf ./cloverleaf/my-code
 ```
 
 Inside the container:
