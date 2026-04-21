@@ -11,6 +11,8 @@ From: ubuntu:24.04
     export CLAUDE_CODE_USE_BEDROCK=1
     export AWS_REGION="us-east-1"
     export OPENAI_BASE_URL="https://bedrock-mantle.us-east-1.api.aws/v1"
+    export HOME=/tmp/claude-home
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 %post
     export DEBIAN_FRONTEND=noninteractive
@@ -34,13 +36,8 @@ From: ubuntu:24.04
     # Symlink is not needed — npm -g puts claude in /usr/bin/claude
 
 %runscript
-    # Create a clean HOME inside the container to avoid picking up the host
-    # user's dotfiles (broken claude symlinks, stale settings.json, etc.)
-    # while still having a fully writable home directory.
-    export HOME=/tmp/claude-home
-    mkdir -p "$HOME/.claude/commands" "$HOME/.local"
-
-    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    # Ensure the clean HOME exists with skills installed
+    mkdir -p "$HOME/.claude/commands"
 
     cp /skills/wss-profiler/SKILL.md "$HOME/.claude/commands/wss-profiler.md"
 
