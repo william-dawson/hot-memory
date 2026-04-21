@@ -34,8 +34,7 @@ From: ubuntu:24.04
     # Symlink is not needed — npm -g puts claude in /usr/bin/claude
 
 %runscript
-    # Run with --no-home --contain so the host $HOME is not mounted.
-    # $HOME will be /root inside the container, which is clean and writable.
+    # Run with --no-home so the host $HOME is not mounted.
     export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     mkdir -p "$HOME/.claude/commands"
