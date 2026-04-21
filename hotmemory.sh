@@ -34,11 +34,13 @@ if [ ! -f "$SIF" ]; then
 fi
 
 if [ -z "$SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK" ]; then
-    echo "Warning: SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK is not set"
+    echo "Error: SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK is not set"
+    exit 1
 fi
 
 if [ -z "$SINGULARITYENV_OPENAI_API_KEY" ]; then
-    echo "Warning: SINGULARITYENV_OPENAI_API_KEY is not set"
+    echo "Error: SINGULARITYENV_OPENAI_API_KEY is not set"
+    exit 1
 fi
 
 exec singularity run --fakeroot --pwd /workspace \
