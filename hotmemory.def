@@ -25,7 +25,7 @@ From: ubuntu:24.04
         openmpi-bin libopenmpi-dev \
         libpapi-dev papi-tools \
         linux-tools-generic linux-tools-common \
-        curl git strace procps \
+        curl git strace procps time \
     && PERF_BIN=$(find /usr/lib/linux-tools-* -name perf -type f | head -1) \
     && ln -sf "$PERF_BIN" /usr/local/bin/perf \
     && rm -rf /var/lib/apt/lists/*
