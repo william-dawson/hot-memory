@@ -92,16 +92,34 @@ perf stat echo ok 2>&1
 | `perf stat` works | perf stat echo ok | Phase 2 hotspot discovery via sampling |
 | `/proc/self/clear_refs` writable | Always works with `--fakeroot` | Hot-byte measurement (the core metric) |
 
+**If PAPI FP events are unavailable but `perf stat` works**, the profiler
+can fall back to raw PMU event codes. Probe for a working FP event:
+
+```bash
+# ARM PMU v3 standard FP events (try both):
+perf stat -e armv8_pmuv3_0/event=0x74/ -- sleep 1 2>&1   # FP_FIXED_OPS_SPEC
+perf stat -e armv8_pmuv3_0/event=0x75/ -- sleep 1 2>&1   # FP_SCALE_OPS_SPEC (SVE)
+# On other architectures, consult perf list and the CPU PMU manual.
+```
+
+If a raw event counts successfully, pass it as a build flag:
+```
+-DWSS_PERF_FP_EVENT=0x74
+```
+The profiler will use `perf_event_open` with that code on aarch64 when
+PAPI provides no FP events. If no raw FP event works, FLOPs will be 0.
+
 Example report:
 ```
 Capability check:
   ✓ Hot-byte measurement (/proc/clear_refs)
   ✓ perf sampling (hotspot discovery)
-  ✗ FLOP counters (PAPI_DP_OPS/SP_OPS/FP_OPS not available)
+  ✗ PAPI FP counters — trying perf_event_open fallback
+    ✓ Raw event 0x74 (FP_FIXED_OPS_SPEC) works — use -DWSS_PERF_FP_EVENT=0x74
   ✗ Load/store counters (PAPI_LD_INS/SR_INS not available)
 
-Available metrics: hot MB, % of peak, perf hotspots.
-Not available: FLOPs, FLOP/byte, total bytes accessed, reuse factor.
+Available metrics: hot MB, % of peak, perf hotspots, FLOPs via raw PMU.
+Not available: total bytes accessed, reuse factor.
 ```
 
 This sets expectations before any work begins. Do not proceed to
@@ -369,6 +387,10 @@ ships a static library (`libwss_profiler.a`) and Fortran module file
 4. **Rebuild** with the profiler linked:
    ```
    make EXTRA_CFLAGS="-DPROFILE_WSS" EXTRA_LDFLAGS="-lwss_profiler -lpapi"
+   ```
+   If Phase 0 identified a working raw FP event code, add it to CFLAGS:
+   ```
+   make EXTRA_CFLAGS="-DPROFILE_WSS -DWSS_PERF_FP_EVENT=0x74" EXTRA_LDFLAGS="-lwss_profiler -lpapi"
    ```
    Adapt the make invocation to the user's actual build system (CMake, manual gcc invocation, etc.).
 

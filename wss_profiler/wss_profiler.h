@@ -135,10 +135,22 @@ static inline void _wss_perf_fp_init(void)
     if (_wss_nfp_events > 0)
         return;  /* PAPI already has FP covered */
 
+    /*
+     * WSS_PERF_FP_EVENT selects the raw PMU event code for FP counting.
+     * Override at compile time: -DWSS_PERF_FP_EVENT=0xNN
+     * Default 0x74 = FP_FIXED_OPS_SPEC from the ARM PMU v3 architecture spec.
+     * If this fails at runtime, the agent should run:
+     *   perf stat -e rNN ./binary   (try candidate codes)
+     * and pass the working code as -DWSS_PERF_FP_EVENT=0xNN in CFLAGS.
+     */
+#ifndef WSS_PERF_FP_EVENT
+#define WSS_PERF_FP_EVENT 0x74
+#endif
+
     struct perf_event_attr pe = {0};
     pe.size           = sizeof(struct perf_event_attr);
     pe.type           = PERF_TYPE_RAW;
-    pe.config         = 0x74;  /* FP_FIXED_OPS_SPEC */
+    pe.config         = WSS_PERF_FP_EVENT;
     pe.disabled       = 1;
     pe.exclude_kernel = 1;
     pe.exclude_hv     = 1;
