@@ -47,9 +47,6 @@ This is a C project built with `mpicc` via a simple Makefile.
 - **To add a header include path**: `make CFLAGS+="-I/path/to/headers" bench`
 - **To include a new C header**: add `#include "header.h"` to `bench.c`; if it's
   on a system path (`/usr/local/include`) no `-I` flag is needed.
-- **To build with profiling**: use `make profile` — sets `-DPROFILE_WSS` and
-  links `-lwss_profiler -lpapi` automatically. The bench is already instrumented.
-
 The Makefile variables `CFLAGS` and `LDFLAGS` accept appended values.
 
 ## Run command
@@ -73,7 +70,7 @@ value depends on the number of ranks.
 - **This is a C code** using MPI and OpenMP.
 - Both kernels are called once per run (no time-stepping loop).
 - `stream_kernel` touches three large arrays — memory-bandwidth-bound.
-  Hot MB scales with rank count (~96 MB at -np 4, ~48 MB at -np 8).
+  Memory footprint per rank scales with rank count (strong scaling).
 - `compute_kernel` has a ~32 MB working set regardless of rank count —
   compute-bound.
 - There is an `MPI_Allreduce` after each kernel for synchronisation.

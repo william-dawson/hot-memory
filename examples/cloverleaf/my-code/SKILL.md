@@ -90,7 +90,7 @@ mpirun -np 4 ./clover_leaf
 
 The input deck `clover.in` controls grid size and number of timesteps.
 The default runs test problem 1 (Sod shock tube) for a small number of
-steps. For a more interesting profiling run, use a larger problem:
+steps. For a more realistic and compute-intensive run, use a larger problem:
 
 ```bash
 cp InputDecks/clover_bm16.in clover.in
@@ -121,8 +121,8 @@ Exit code 0 indicates success.
   timestep in a fixed order.
 - `PdV`, `ideal_gas`, and `viscosity` all touch the energy/pressure/density
   fields. `advec_cell` and `advec_mom` touch the velocity and flux fields.
-  The interesting profiling question is which kernels share arrays and
-  which have disjoint working sets.
+  The interesting question is which kernels share arrays and which
+  operate on disjoint data.
 - Grid size controls the working set. The default `clover.in` is small.
   Use `clover_bm16.in` (or larger) for realistic memory measurements.
 - The code creates output files (`clover.out`, `clover.visit`) in the

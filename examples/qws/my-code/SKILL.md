@@ -85,7 +85,7 @@ The test program takes 12 command-line arguments:
 |----------|---------|
 | `lx ly lz lt` | Local lattice dimensions (per MPI rank). Working set scales as `lx × ly × lz × lt`. |
 | `px py pz pt` | MPI process grid. Total ranks = `px × py × pz × pt`. |
-| `tol_outer` | Convergence tolerance for the outer DD BiCGStab solver. Set to `-1` to run for exactly `maxiter_outer` iterations (useful for profiling). |
+| `tol_outer` | Convergence tolerance for the outer DD BiCGStab solver. Set to `-1` to run for exactly `maxiter_outer` iterations regardless of convergence. |
 | `tol_inner` | Convergence tolerance for the inner preconditioner solver. Set to `-1` for fixed iterations. |
 | `maxiter_outer` | Maximum iterations for the outer solver (note: the actual count is `maxiter_outer - 1`). |
 | `maxiter_inner` | Maximum iterations for the inner preconditioner. |
@@ -100,15 +100,14 @@ Multi-process test:
 mpirun -np 2 ./main 32 6 4 3 1 1 1 2 -1 -1 6 50
 ```
 
-For profiling, use `tol=-1` so the solver runs a fixed number of
-iterations regardless of convergence. To increase the working set,
-increase the local lattice dimensions (e.g. `64 12 8 6` instead of
-`32 6 4 3`).
+Setting `tol=-1` runs for a fixed iteration count, which gives
+reproducible timing independent of convergence. To increase the memory
+footprint, increase the local lattice dimensions (e.g. `64 12 8 6`
+instead of `32 6 4 3`).
 
-For quick benchmarks where you just need the code to run and converge
-fast, use a loose tolerance such as `1e-4` for both `tol_outer` and
-`tol_inner`. This cuts iteration count dramatically compared to the
-default tight tolerances used in production.
+For a quick run that converges fast, use a loose tolerance such as
+`1e-4` for both `tol_outer` and `tol_inner`. This cuts iteration count
+dramatically compared to the tight tolerances used in production.
 
 ## Expected output / correctness check
 
@@ -132,6 +131,6 @@ architectures are acceptable.
 - The solver loop is in `bicgstab_dd_mix.cc`. Each iteration calls
   the domain-decomposed Dirac operator and the preconditioner.
 - Setting `tol=-1` runs for a fixed iteration count — useful for
-  consistent profiling runs.
+  reproducible timing.
 - Lattice size controls the working set. `32 6 4 3` is small; increase
   dimensions for realistic memory measurements.
