@@ -1,11 +1,13 @@
-CC      = mpicc
-CFLAGS  = -O2 -fopenmp -Wall
-LDFLAGS =
+CC          = mpicc
+CFLAGS      = -O2 -fopenmp -Wall
+LDFLAGS     =
+EXTRA_CFLAGS ?=
 
 # Build with profiling enabled.
 # wss_profiler.h is installed at /usr/local/include inside the container,
 # so no -I flag is needed.
-profile: CFLAGS  += -DPROFILE_WSS
+# Pass extra compiler defines with: make profile EXTRA_CFLAGS="-DFOO=bar"
+profile: CFLAGS  += -DPROFILE_WSS $(EXTRA_CFLAGS)
 profile: LDFLAGS += -lwss_profiler -lpapi
 profile: bench
 

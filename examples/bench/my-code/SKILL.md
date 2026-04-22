@@ -48,6 +48,10 @@ This is a C project built with `mpicc` via a simple Makefile.
 - **To include a new C header**: add `#include "header.h"` to `bench.c`; if it's
   on a system path (`/usr/local/include`) no `-I` flag is needed.
 The Makefile variables `CFLAGS` and `LDFLAGS` accept appended values.
+The `profile` target also accepts extra compiler defines via `EXTRA_CFLAGS`:
+```bash
+make profile EXTRA_CFLAGS="-DFOO=bar"
+```
 
 ## Run command
 
