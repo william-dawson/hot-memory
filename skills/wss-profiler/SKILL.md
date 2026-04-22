@@ -28,32 +28,18 @@ Given your MPI code, it answers:
 ## General rule: log everything
 
 Always redirect profiling output to files so the user can review it later.
-For every profiling run, capture both stdout and stderr to a timestamped
-log file:
-
-```bash
-mpirun -np <N> ./binary <args> > profiling_run.log 2>&1
-```
-
-After the run, grep the log for `[WSS]` lines and present the results.
-Keep the full log — the user may want to inspect it for warnings, timing
-data, or unexpected output. Name logs descriptively:
-`phase1_peak_memory.log`, `phase2_perf.log`, `phase3_hotset_run1.log`, etc.
+Name logs descriptively: `phase1_peak_memory.log`, `phase2_perf.log`,
+`phase3_hotset_run1.log`, etc. Keep the full log — the user may want to
+inspect it for warnings, timing data, or unexpected output.
 
 ---
 
 ## Container requirements
 
-The profiling container must have:
-- gcc / g++ with OpenMP (`-fopenmp`)
-- OpenMPI (`mpicc`, `mpirun`)
-- PAPI (`libpapi-dev`, `papi-tools`)
-- `perf` (`linux-tools-generic` or equivalent)
+- gcc / g++ / gfortran, OpenMPI (`mpicc`, `mpirun`)
+- PAPI (`libpapi-dev`, `papi-tools`), `perf` (`linux-tools-generic`)
 - Runtime flags: `--privileged` (needed for `clear_refs` and `perf_event_open`)
 - Host may need: `sysctl kernel.perf_event_paranoid=-1`
-
-The Singularity/Apptainer definition in this repo is the primary base image
-definition. The user extends it for their code's dependencies.
 
 ---
 
@@ -65,426 +51,165 @@ until the baseline build and run are confirmed working.
 
 ---
 
-## Phase 0: Capability check
+## Workflow
 
-### When to use
-Always. Run this first, before anything else. The goal is to know exactly
-what this machine can measure before touching any user code.
+### Step 0: `wss_capability_check` — what can this machine measure?
 
-### OMP_NUM_THREADS is always 1
+Call `wss_capability_check` (optionally with `extra_codes` for additional
+PMU event codes to probe). **Always run first.**
 
-`OMP_NUM_THREADS=1` is set in the container environment. OpenMP is never
-active, never a source of measurement error, and never a cause of counter
-failures. **Never blame OpenMP for a counter problem.** If something doesn't
-work, the cause is one of the three things listed below.
+What to do with the result:
+- Read `summary.unavailable` and report each item to the user before proceeding.
+- If `fp_events` is empty and `perf_stat_ok` is true, try calling again with
+  architecture-specific extra codes (e.g. `["0x74","0x75"]` for ARM Grace/Neoverse).
+- If `clear_refs_ok` is false, stop and tell the user to re-run with `--privileged`.
+- The tool stores `fp_events` internally; `wss_run_profiled` picks them up automatically.
 
-### Three possible failure modes for FP counting
-
-FP counting can fail in three distinct ways. Diagnose each one separately:
-
-**1. PAPI can't identify the CPU** (libpfm4 doesn't know this microarchitecture)
-```bash
-papi_component_avail 2>&1 | grep -A3 perf_event
-papi_avail 2>&1 | grep -E 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS'
-```
-If PAPI says "no default PMU found" or shows no FP events, this is the
-libpfm4 problem. It is a known issue on new CPUs (e.g. ARM Grace, CPUID
-0xd87) where libpfm4 has no entry yet. PAPI will not work for FP here.
-Proceed to the perf fallback below.
-
-**2. perf_event_open is blocked by the kernel** (permission/paranoia)
-```bash
-perf stat -e cycles -- echo ok 2>&1
-cat /proc/sys/kernel/perf_event_paranoid
-```
-If `perf stat` fails with "Permission denied", the host kernel blocks
-hardware counters. This requires a sysadmin fix (`perf_event_paranoid=-1`
-or running with `--privileged`). Hot-byte measurement still works; FLOPs
-will be 0.
-
-**3. Wrong event code for this CPU's ISA** (opens OK, counts 0 in userspace)
-This is the most subtle failure. `perf_event_open` succeeds and returns a
-valid fd, but the counter reads 0 for user code. This happens when the
-event code doesn't match the instruction set the compiler generated:
-- 0x74 (`FP_FIXED_OPS_SPEC`) counts scalar and NEON/ASIMD ops
-- 0x75 (`FP_SCALE_OPS_SPEC`) counts SVE ops
-On modern ARM cores (Grace, Neoverse V2), the compiler vectorises to SVE
-by default — 0x74 will count nothing for that code even though it opens
-successfully. You need to find **all** the codes that count for this
-machine's userspace code, not just any code that opens without error.
-
-### Step-by-step
-
-1. **Check PAPI** (failure mode 1):
-```bash
-papi_component_avail 2>&1 | grep -A3 perf_event
-papi_avail 2>&1 | grep -E 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS|PAPI_LD_INS|PAPI_SR_INS'
-```
-
-2. **Check perf is accessible** (failure mode 2):
-```bash
-perf stat -e cycles -- echo ok 2>&1
-```
-
-3. **Run `wss_check`** — this does everything in one shot:
-```bash
-wss_check
-```
-It checks PAPI, perf, runs the FP probe, tests `clear_refs`, and prints a
-structured report with a recommended `export` line. Read the full output.
-If you suspect additional FP event codes are relevant on this platform,
-pass them as arguments (they are forwarded to the probe tool):
-```bash
-wss_check 0x74 0x75 0x1b 0x3c
-```
-
-The probe inside `wss_check` uses `exclude_kernel=1`, matching the profiler
-exactly. **A code that opens but returns 0 is not working** — that is the
-ISA mismatch (failure mode 3), not a permission problem. If `wss_check`
-says no codes worked but `perf stat -e armv8_pmuv3_0/event=0x75/ -- sleep 1`
-counts something, you have a container privilege issue, not an ISA mismatch.
-
-4. **Report to the user** before proceeding:
-
-| Capability | How to check | What it enables |
-|------------|-------------|-----------------|
-| `PAPI_DP_OPS` + `PAPI_SP_OPS` (or `PAPI_FP_OPS`) | papi_avail | FLOP counts |
-| `PAPI_LD_INS` + `PAPI_SR_INS` | papi_avail | Total bytes accessed, reuse factor |
-| `perf stat` works | perf stat -e cycles echo ok | Phase 2 hotspot discovery |
-| `WSS_PERF_FP_EVENTS` non-empty | wss_probe_fp_events | FLOP counts via perf fallback |
-| `/proc/self/clear_refs` writable | Always with `--fakeroot` | Hot-byte measurement (core metric) |
-
-Example report:
+Example report to give the user:
 ```
 Capability check:
   ✓ Hot-byte measurement (/proc/clear_refs)
   ✓ perf sampling (hotspot discovery)
-  ✗ PAPI FP counters (libpfm4 doesn't know this CPU — known issue on Grace)
+  ✗ PAPI FP counters (libpfm4 doesn't know this CPU)
   ✓ perf_event_open fallback: WSS_PERF_FP_EVENTS=0x74,0x75
-      0x74 (scalar/NEON): 12483 ops ✓
-      0x75 (SVE):         98432 ops ✓   ← SVE dominant: compiler vectorised to SVE
-  ✗ Load/store counters (PAPI_LD_INS/SR_INS not available)
-
-Available metrics: hot MB, % of peak, perf hotspots, FLOPs via raw PMU.
-Not available: total bytes accessed, reuse factor.
+  ✗ Load/store counters (total bytes accessed / reuse factor unavailable)
 ```
 
-**Run the profiled binary in the same shell where you ran `eval`**, or
-set the env var inline:
-```bash
-WSS_PERF_FP_EVENTS=0x74,0x75 mpirun -np <N> ./solver ...
-```
+### Step 1: `wss_measure_baseline` — peak RSS upper bound
 
-This sets expectations before any work begins. Do not proceed to
-instrumentation without reporting this first.
+Call `wss_measure_baseline` with `binary_command` (and `mpirun_prefix` for
+MPI codes, e.g. `"mpirun -np 4"`).
+
+- Record `peak_rss_mb`. This is the upper bound for all hot-set comparisons.
+- Report to user: "Peak memory for rank 0: X MB. Per-kernel hot sets will be
+  fractions of this."
+
+### Step 2: `wss_perf_profile` — identify which kernels to instrument
+
+Call `wss_perf_profile` with the same `mpirun_prefix` and `binary_command`.
+
+- Read `raw_report`. Identify the top functions by sample %. Note which are
+  in user code vs. MPI/library code.
+- Tell the user which functions appear hottest and ask which to instrument,
+  or make a recommendation based on the data.
+- If `exit_code` is non-zero and `perf_record_output` mentions "Permission denied",
+  inform the user that `perf_event_paranoid` must be ≤ 1 on the host. Phase 3
+  (hot-byte measurement) can still proceed if the user already knows which
+  kernels to target.
+
+### Step 3: Instrument, rebuild, then `wss_run_profiled`
+
+This step requires agent judgment. The MCP tool runs the binary; **you** decide
+how and where to instrument it.
+
+1. **Add instrumentation** (see "Instrumentation strategy" below).
+2. **Rebuild** with `-DPROFILE_WSS` and link `-lwss_profiler -lpapi`.
+3. Call `wss_run_profiled` with `mpirun_prefix` and `binary_command`.
+   - `fp_events` from Step 0 are injected automatically.
+4. Parse `measurements[]` for results. Check `errors[]` for `[WSS] ERROR` lines.
+5. Present the results table (see "How to interpret results" below).
 
 ---
 
-## Phase 1: Baseline peak memory
+## Instrumentation strategy
 
-### When to use
-Always. Run this after the capability check to establish the peak memory
-allocation for the code. This is the naive upper bound — the number someone
-would cite if they didn't know about hot working sets.
+`wss_profiler.h` is at `/usr/local/include` in the container. Include it with
+`#include "wss_profiler.h"` (no `-I` flag needed). Link with `-lwss_profiler -lpapi`.
 
-### What to do
-
-1. **Build the code normally** (no profiling flags).
-2. **Run with `/usr/bin/time -v`** to capture peak RSS:
-
-For MPI codes, wrap rank 0:
-```bash
-mpirun -np <N> bash -c '
-  if [ "$OMPI_COMM_WORLD_RANK" -eq 0 ]; then
-    /usr/bin/time -v <run_command> 2>&1
-  else
-    <run_command> 2>/dev/null
-  fi' 2>&1 | grep "Maximum resident"
-```
-
-For non-MPI codes:
-```bash
-/usr/bin/time -v <binary> <args> 2>&1 | grep "Maximum resident"
-```
-
-3. **Record the peak RSS** in MB (the value is in KB, divide by 1024).
-4. **Report to the user**: "Peak memory allocation for rank 0: X MB.
-   This is the upper bound — the actual memory each kernel needs may be
-   much smaller. Next we'll measure the per-kernel hot working sets."
-
-This number becomes the baseline for comparison throughout the rest of
-the workflow. Every time you report a kernel's hot set, compare it to
-the peak: "stencil_apply touches 512 MB out of 3072 MB total (17%)".
-
----
-
-## Phase 2: Discovery (perf)
-
-### When to use
-The user says "find the hotspots", "where is time going", or "profile my code". Use this before Phase 3 to know which kernels to instrument.
-
-### What to do
-
-1. **Read the user's code skill** to get the build and run commands.
-2. **Build normally** (no special flags needed for perf).
-3. **Run with perf on rank 0**:
-
-```bash
-mpirun -np <N> bash -c '
-  if [ "$OMPI_COMM_WORLD_RANK" -eq 0 ]; then
-    perf record -g -F 99 -o /tmp/perf.data -- <run_command>
-  else
-    <run_command>
-  fi'
-```
-
-Replace `<run_command>` with the actual binary + args. For non-MPI codes, just:
-```bash
-perf record -g -F 99 -o /tmp/perf.data -- <binary> <args>
-```
-
-4. **Parse the report**:
-```bash
-perf report -n --stdio --no-children -i /tmp/perf.data 2>/dev/null | head -60
-```
-
-5. **Report to the user**: list the top functions by % samples, note which are in their code vs. MPI/OpenMP library, and suggest which ones to instrument in Phase 3.
-
-### If perf is unavailable
-
-If `perf record` fails with "Permission denied" (`perf_event_paranoid` too high), inform the user that Phase 2 requires `sysctl kernel.perf_event_paranoid=0` set by a sysadmin. Do not attempt to instrument the user's code with timing calls — the code may be too complex for reliable automated instrumentation. Phase 3 (hot-byte measurement) can still proceed if the user already knows which kernels to target.
-
-### What perf measures
-- Wall-clock samples on the profiled rank/process.
-- MPI wait time shows up as MPI library time — this is useful (it means the rank is idle waiting for communication) but may surprise users.
-- Inlined functions are attributed to their caller unless built with `-g`.
-- Functions consuming <1% may not appear.
-
-### Example output to produce
-```
-Top functions by time (rank 0, perf sampling):
-
-  42.3%   stencil_apply     src/stencil.c
-  28.1%   fft_forward       src/fft.c
-  11.0%   boundary_exchange src/boundary.c
-   6.2%   MPI_Allreduce     (MPI library — rank 0 is waiting here)
-   ...
-
-Suggest instrumenting: stencil_apply, fft_forward, boundary_exchange.
-Which ones should I dig into?
-```
-
----
-
-## Phase 3: Working set + FLOPs
-
-### When to use
-The user has identified specific kernels (from Phase 2 or from domain knowledge) and wants hot byte count + FLOP count.
-
-### OpenMP warning
-**Hardware counters (PAPI and the perf_event_open fallback) only instrument the main thread.** OpenMP worker threads are NOT counted. The hot-byte measurement (`/proc/self/smaps`) IS process-wide and includes all threads. For OpenMP codes:
-- Hot MB is accurate — use it for GPU memory planning.
-- FLOP counts, total bytes accessed, and all derived ratios (FLOP/byte, reuse factor) are **lower bounds only**. Always state this when reporting results for OpenMP codes.
-
-### What the header does
-
-`wss_profiler.h` (in this repo) provides three macros:
+### Macros
 
 | Macro | Where | What it does |
 |-------|-------|--------------|
-| `WSS_INIT()` | Once, after `MPI_Init()` | Identifies rank 0, initialises PAPI (and perf fallback if needed), prints startup message |
+| `WSS_INIT()` | Once, after `MPI_Init()` | Identifies rank 0, initialises PAPI |
 | `WSS_BEGIN()` | Before each kernel call | Clears `/proc/self/clear_refs`, starts counters |
-| `WSS_END("name")` | After each kernel call | Stops counters, reads `/proc/self/smaps`, prints report line |
+| `WSS_END("name")` | After each kernel call | Stops counters, reads smaps, prints `[WSS]` line |
 
-When built without `-DPROFILE_WSS`, all macros are empty — zero overhead, no compilation changes needed.
+When built without `-DPROFILE_WSS`, all macros compile away to nothing.
 
-### Step-by-step
+### Granularity (the most important decision)
 
-1. **No file copying needed.** `wss_profiler.h` is installed at `/usr/local/include` in the container. Include it with `#include "wss_profiler.h"` (no `-I` flag needed) and link with `-lwss_profiler -lpapi`.
+- **Too coarse** (wrap an entire solver): hot set ≈ peak allocation, not useful.
+- **Too fine** (individual vector ops): noise dominates.
+- **Goal**: find the level where distinct computational phases have meaningfully
+  different working sets.
 
-2. **Initialise at the top level, instrument wherever needed.**
-   `WSS_INIT()` must be called once in the file containing `main()` (or
-   wherever `MPI_Init` is), right after `MPI_Init`. But `WSS_BEGIN()` and
-   `WSS_END()` can go in any file — they don't need to be in the same
-   file as `WSS_INIT()`. Include the header (or `use wss_profiler_mod`
-   for Fortran) in each file where you place `WSS_BEGIN()`/`WSS_END()`
-   calls. The init and the measurements are independent — init sets up
-   PAPI and rank detection globally, then any code path can measure.
+Process:
+1. Read the source to understand the main loop structure and data access patterns.
+2. Start coarse (one solver iteration). If hot set ≈ peak, go deeper.
+3. Look for phase boundaries: before/after matvec, preconditioner, halo exchange.
+4. For iterative solvers (CG, BiCGStab), the interesting level is usually
+   individual operations within one iteration: matvec, preconditioner, dot products,
+   vector updates.
+5. Name measurements descriptively: `"matvec"`, `"preconditioner"`, not `"step1"`.
 
-   ```c
-   // main.c — init only
-   #include "wss_profiler.h"
-   MPI_Init(&argc, &argv);
-   WSS_INIT();
+### NEVER nest WSS_BEGIN/WSS_END calls
 
-   // solver.c — measurements
-   #include "wss_profiler.h"
-   WSS_BEGIN();
-   matvec(A, p, Ap);
-   WSS_END("matvec");
-   ```
+The profiler uses a single global PAPI eventset and a single `clear_refs` state.
+Nesting corrupts both. To measure at multiple levels of a hierarchy, do **separate runs**:
+- Run 1: BEGIN/END around the whole solver
+- Run 2: BEGIN/END around each individual operation inside the solver
 
-3. **Choose the right instrumentation granularity.** This is the most
-   important decision. If you instrument too coarsely (e.g. wrapping an
-   entire solver call), you'll measure the combined working set of many
-   sub-kernels and learn nothing useful — the result will be close to
-   peak allocation. If you instrument too finely (e.g. individual vector
-   operations), you'll get noise.
+### Example — BiCGStab kernel
 
-   **The goal is to find the level where different *phases* of the
-   computation have meaningfully different working sets.** Follow this
-   process:
+```c
+// main.c — init only
+#include "wss_profiler.h"
+MPI_Init(&argc, &argv);
+WSS_INIT();
 
-   a. **Read the source code** to understand the structure. Identify the
-      main loop or solver iteration. Inside that loop, identify the
-      distinct computational phases — each phase typically calls different
-      functions or touches different arrays.
+// solver.c — measurements
+#include "wss_profiler.h"
+WSS_BEGIN();
+matvec(A, p, Ap);
+WSS_END("matvec");
 
-   b. **Start coarse, then refine.** First instrument the entire main
-      loop body (one iteration). If the hot set is close to peak
-      allocation, that means the loop touches everything — you need to
-      go deeper. Break it into phases and instrument each separately.
+WSS_BEGIN();
+precondition(M, r, z);
+WSS_END("preconditioner");
 
-   c. **Look for phase boundaries.** Good places to put WSS_BEGIN/END
-      are between distinct computational steps: before/after a matrix
-      multiply, before/after a halo exchange, before/after a
-      preconditioner solve. Each of these may touch very different data.
+WSS_BEGIN();
+dot_product(r, z, &rz);
+WSS_END("dot_product");
 
-   d. **For iterative solvers** (CG, BiCGStab, etc.), the interesting
-      granularity is usually the individual operations *within* one
-      solver iteration: the matrix-vector product, the preconditioner
-      application, the dot products, the vector updates. These have
-      very different memory access patterns.
-
-   e. **If perf/timing data doesn't give enough detail**, read the code
-      to understand which arrays each function touches. The source tells
-      you what the working set *should* be; the measurement confirms it.
-      If the measurement is much larger than expected, you're probably
-      measuring too coarsely.
-
-   f. **Name your measurements descriptively** so the results table makes
-      sense: `"deo_in"`, `"preconditioner"`, `"allreduce"`, not `"step1"`.
-
-   g. **NEVER nest WSS_BEGIN/WSS_END calls.** The profiler uses a single
-      global PAPI eventset and a single `/proc/self/clear_refs` state.
-      Nesting will corrupt both the PAPI counters and the hot-byte
-      measurement. If you need to measure at multiple levels of a call
-      hierarchy (e.g. the whole solver AND individual kernels inside it),
-      do separate profiling runs — one run per level. For example:
-      - Run 1: instrument at the solver level (one BEGIN/END around the
-        entire solver call)
-      - Run 2: instrument at the kernel level (BEGIN/END around each
-        individual operation inside the solver)
-      Never put BEGIN/END around both the solver and its sub-operations
-      in the same run.
-
-   Example — instrumenting a BiCGStab solver iteration:
-   ```c
-   WSS_BEGIN();
-   matvec(A, p, Ap);           // matrix-vector product
-   WSS_END("matvec");
-
-   WSS_BEGIN();
-   precondition(M, r, z);      // preconditioner
-   WSS_END("preconditioner");
-
-   WSS_BEGIN();
-   dot_product(r, z, &rz);     // reduction
-   WSS_END("dot_product");
-
-   WSS_BEGIN();
-   axpy(alpha, p, x);          // vector update
-   WSS_END("vector_update");
-   ```
-
-   Wrap each target kernel at its call site (not inside the function definition):
-   ```c
-   WSS_BEGIN();
-   stencil_apply(grid, nx, ny, nz);
-   WSS_END("stencil_apply");
-   ```
-
-   If the kernel is called in a loop, decide whether to measure one iteration or the whole loop:
-   - One iteration: macros go inside the loop (ask the user which iteration).
-   - Whole loop: `WSS_BEGIN()` before the loop, `WSS_END()` after.
+WSS_BEGIN();
+axpy(alpha, p, x);
+WSS_END("vector_update");
+```
 
 ### Fortran codes
 
-For Fortran codes, use the pre-compiled Fortran bindings. The container
-ships a static library (`libwss_profiler.a`) and Fortran module file
-(`wss_profiler_mod.mod`) at `/usr/local/lib/` and `/usr/local/include/`.
+Use `use wss_profiler_mod` and call `wss_init()`, `wss_begin()`,
+`wss_end_named("name")`. Link with `-lwss_profiler -lpapi` and pass
+`-I/usr/local/include` so mpif90 finds `wss_profiler_mod.mod` (Fortran
+compilers do NOT search system include paths for `.mod` files by default).
 
-1. **Add `use wss_profiler_mod`** and instrument the Fortran code:
-   ```fortran
-   use wss_profiler_mod
-   ! ... after MPI_Init:
-   call wss_init()
-   ! ... before/after each kernel:
-   call wss_begin()
-   call some_kernel(...)
-   call wss_end_named("some_kernel")
-   ```
+### OpenMP note
 
-2. **Link with the pre-compiled library** by adding to the final link step:
-   ```
-   -lwss_profiler -lpapi
-   ```
-   The library is at `/usr/local/lib` (no `-L` flag needed). The module
-   file (`wss_profiler_mod.mod`) is at `/usr/local/include` — pass
-   `-I/usr/local/include` so `mpif90` can find it (Fortran compilers do
-   NOT search system include paths for `.mod` files by default).
+Hardware counters (PAPI and the perf fallback) only instrument the main thread.
+OpenMP worker thread FLOPs are NOT counted. The hot-byte measurement (smaps)
+IS process-wide. For OpenMP codes: hot MB is accurate for GPU planning; FLOP
+counts and derived ratios are lower bounds only. Always state this.
 
-   Adapt to the project's build system. For example with a Makefile:
-   ```
-   OPTIONS  += -I/usr/local/include
-   LDFLAGS  += -lwss_profiler -lpapi
-   ```
+---
 
-3. **Rebuild** with the profiler linked:
-   ```
-   make EXTRA_CFLAGS="-DPROFILE_WSS" EXTRA_LDFLAGS="-lwss_profiler -lpapi"
-   ```
-   Adapt the make invocation to the user's actual build system (CMake, manual gcc invocation, etc.).
+## How to interpret results
 
-4. **Run** (if Phase 0 set `WSS_PERF_FP_EVENTS`, run in the same shell):
-   ```bash
-   mpirun -np <N> ./solver test/small.cfg
-   ```
-   If the env var isn't already exported from Phase 0, set it inline:
-   ```bash
-   WSS_PERF_FP_EVENTS=0x74,0x75 mpirun -np <N> ./solver test/small.cfg
-   ```
+The `measurements[]` array from `wss_run_profiled` contains per-kernel objects:
 
-5. **Capture stderr from rank 0**. The report lines go to stderr. Redirect or tee to capture:
-   ```bash
-   mpirun -np <N> ./solver test/small.cfg 2>&1 | grep '\[WSS\]'
-   ```
+| Field | Meaning |
+|-------|---------|
+| `hot_mb` | Unique pages touched — the GPU memory this kernel needs |
+| `accessed_mb` | Total bytes loaded+stored (0 if PAPI load/store unavailable) |
+| `gflop` | Floating-point operations (0 if no FP counters) |
+| `flop_per_byte_hot` | FLOPs per byte of working set |
+| `flop_per_byte_acc` | FLOPs per byte of traffic (closest to roofline arithmetic intensity) |
 
-6. **Report results** to the user (see format below).
+When `accessed_mb > hot_mb`, the kernel revisits data (reuse ratio = accessed/hot).
+When they're close, the kernel streams through data once.
 
-### Output format
+### Results table format
 
-```
-[WSS] Profiling active on rank 0
-[WSS] stencil_apply              512.0 MB hot   1024.0 MB accessed   0.480 GFLOP   0.98 FLOP/B-hot   0.47 FLOP/B-acc
-[WSS] fft_forward                128.0 MB hot    256.0 MB accessed   0.190 GFLOP   1.57 FLOP/B-hot   0.74 FLOP/B-acc
-```
-
-Fields:
-- **MB hot**: unique pages touched (from `/proc/self/smaps`) — GPU memory needed
-- **MB accessed**: total bytes loaded + stored (from PAPI `LD_INS` + `SR_INS` × 8 bytes) — memory traffic. Shows 0 if counters unavailable.
-- **GFLOP**: floating-point operations (from PAPI)
-- **FLOP/B-hot**: FLOPs per byte of working set — "how much compute per byte the kernel cares about"
-- **FLOP/B-acc**: FLOPs per byte of traffic — closer to roofline arithmetic intensity
-
-When MB accessed > MB hot, the kernel revisits data (reuse). When they're
-close, the kernel streams through data once. The ratio `accessed / hot` is
-the average reuse factor.
-
-### How to present results
-
-Always include the Phase 1 peak memory as context. Present all available
-metrics in a single table:
+Always include Phase 1 peak RSS as context:
 
 ```
 Peak memory (rank 0): 3072 MB
@@ -495,51 +220,30 @@ Peak memory (rank 0): 3072 MB
 | fft_forward   |  28.1% |    128 |      4.2% |         256 |  2.0x |  0.19 |       1.57 |       0.74 | borderline   |
 ```
 
-Columns that depend on unavailable PAPI counters (FLOP, accessed MB) should
-be shown as "n/a" rather than 0. The hot MB and % of Peak columns always
-work.
-
-The key insights to highlight for the user:
-- **% of Peak** shows how much of total allocation each kernel actually needs
-- **Reuse** (accessed / hot) shows whether the kernel streams or revisits data
-- **FLOP/B-acc** is the closest to roofline arithmetic intensity
+Show unavailable counter columns as "n/a" rather than 0. Hot MB and % of Peak always work.
 
 **FLOP/byte interpretation:**
-- < 1: kernel sweeps data with little reuse — almost certainly memory-bandwidth-bound
+- < 1: sweeps data with little reuse — almost certainly memory-bandwidth-bound
 - 1–5: borderline — depends on hardware balance
-- > 10: compute-heavy relative to working set — likely compute-bound
+- > 10: compute-heavy — likely compute-bound
 
-**Always state the caveats:**
+**Caveats to always state:**
 - Hot bytes are at 4 KB page granularity (rounded up). Small working sets have significant rounding error.
-- **PAPI only counts the main thread. OpenMP worker thread FLOPs are NOT counted.** For codes that use OpenMP parallelism inside kernels, the FLOP count will be severely undercounted. The hot-byte measurement (smaps) IS process-wide and includes all threads. When profiling OpenMP codes, rely on hot bytes for GPU memory planning and treat FLOP counts as lower bounds only.
-- FLOP/byte here is per byte of *working set*, not per byte of *bandwidth*. It is not arithmetic intensity in the roofline sense.
-- smaps includes stack, code, and library pages (~a few MB of noise). For large working sets this is negligible.
-
-### Cleanup
-
-After profiling, **revert the instrumentation**:
-- Remove `#include "wss_profiler.h"` and `WSS_INIT()` from main.
-- Remove all `WSS_BEGIN()` / `WSS_END()` calls.
-- Rebuild clean.
-
-Alternatively, leave the macros in place guarded by `-DPROFILE_WSS` — without that flag they compile away to nothing.
+- PAPI only counts the main thread. For OpenMP codes, treat FLOP counts as lower bounds.
+- smaps includes stack, code, and library pages (~a few MB of noise). Negligible for large working sets.
 
 ---
 
 ## GPU memory planning
 
-Once per-kernel hot sets are measured, answer GPU memory planning questions as follows.
-
 ### Key insight
 
 **GPU memory planning is not about total allocation. It is about the maximum hot working set across all kernels, plus what needs to stay resident between them.**
 
-Total allocation is the worst-case upper bound. `max(hot set)` is the realistic lower bound for device memory required by any single kernel.
-
 ### "Will it fit on GPU X?"
 
 ```
-max_hot_mb = max(hot MB across all profiled kernels)
+max_hot_mb = max(hot_mb across all profiled kernels)
 device_mem_mb = <device memory in MB, e.g. 81920 for A100 80GB>
 
 if max_hot_mb < device_mem_mb:
@@ -552,80 +256,41 @@ else:
      explicit swapping will be required."
 ```
 
-### "What's the transfer plan?"
+### Transfer plan
 
 Reason about execution order. For a time-stepping loop:
+- **Data resident across transitions**: arrays hot in consecutive kernels stay on device.
+- **Transfer cost of A → B**: `hot(B) - overlap(A,B)`, not `hot(B)`.
+- **Minimum resident set**: union of arrays hot in kernels that must remain on device.
 
-```
-for each timestep:
-    stencil_apply()      # hot: 512 MB
-    fft_forward()        # hot: 128 MB
-    boundary_exchange()  # hot: 16 MB
-```
-
-- **Data resident across transitions**: if the same arrays are hot in consecutive kernels, they should stay on device. If arrays are not shared, they can be evicted.
-- **Transfer cost of transitioning kernel A → kernel B**: `hot(B) - overlap(A, B)`, not `hot(B)`.
-- **Minimum resident set**: union of all arrays hot in *any* kernel that must remain on device (e.g. arrays hot in both the kernel before and after another). If nothing is shared across all kernels, the theoretical minimum is 0 (everything could swap). In practice, shared arrays are the constraint.
-
-### "What's the swap cost per timestep?"
+### Swap cost per timestep
 
 ```
 swap_per_step ≤ sum(hot MB for all kernels in one timestep)   [worst case: no reuse]
-swap_per_step ≥ max(hot MB)                                   [best case: everything fits]
+swap_per_step ≥ max(hot MB)                                   [best case: all fits]
 ```
 
-With known execution order and device memory budget, compute the exact number:
-- For each kernel transition, the swap-in cost is `hot(next kernel) - (bytes already resident)`.
-- Sum over all transitions in one timestep.
+### Framing rules
 
-### Important framing rules
-
-- Never say "total allocation is X GB, so you need X GB of GPU memory." Always clarify that hot set < total allocation.
-- When you don't have array-level attribution (only total hot MB per kernel), you can only bound the overlap — you cannot compute it exactly. Say so.
-- If the user asks about a GPU before Phase 3 is done, explain that you need hot set measurements first, and offer to run Phase 3.
+- Never say "total allocation is X GB, so you need X GB of GPU memory." Always clarify hot set < total allocation.
+- When you don't have array-level attribution, you can only bound overlap — say so.
+- If the user asks about a GPU before Step 3 is done, explain you need measurements first and offer to run Step 3.
 
 ---
 
 ## Generating a code skill for the target project
 
-When the user asks you to generate a skill file for their project (e.g.
-"make a skill file for the code in /workspace"), follow this procedure:
+When the user asks you to generate a skill file for their project:
 
-1. **Explore the source tree**: `ls`, `find`, look at file extensions to
-   determine the language (C, C++, Fortran, mixed).
-2. **Find the build system**: look for `Makefile`, `CMakeLists.txt`,
-   `configure`, or build scripts. Read them to understand how compilation
-   and linking works.
-3. **Identify the entry point**: find `main()` (C/C++) or `program` (Fortran).
-   Trace the call graph to understand the kernel structure.
-4. **Try building and running**: use the build system you found. Note the
-   exact commands that work.
-5. **Determine build extensibility**: figure out how to add a new library
-   or include path. This is critical — the "Extending the build" section
-   of the skill must be detailed enough that someone can inject a library
-   into the build without reading the Makefile themselves. Specifically:
-   - For C/C++: how to add `-I` (include path), `-l` (library), `-D` (define)
-   - For Fortran: how to add `-I` for `.mod` files (Fortran compilers do
-     NOT search system paths like `/usr/local/include` for modules by
-     default — this must be explicit), how to link a library
-   - What Makefile variables accept appended values (`CFLAGS`, `LDFLAGS`,
-     `OPTIONS`, etc.)
-   - Where in the build the final link step happens (for adding `-l` flags)
-6. **Write the SKILL.md** following the template at
-   `/skills/code-template/SKILL.md` (also available as `/my-code` if
-   mounted). Fill in every section:
-   - What the code is (language, domain, parallelism model)
-   - Source layout (key files and what they contain)
-   - Build command
-   - Extending the build (how to add headers/libraries/flags — critical)
-   - Run command
-   - Expected output / correctness check
-   - Notes for the profiler (language, parallelism, timestep structure)
-7. **Save the skill** to `/skills/my-code/SKILL.md` so it's available as
-   a slash command.
+1. Explore the source tree: file extensions, language (C, C++, Fortran, mixed).
+2. Find the build system: `Makefile`, `CMakeLists.txt`, configure, or scripts.
+3. Identify the entry point: `main()` (C/C++) or `program` (Fortran).
+4. Try building and running. Note the exact commands that work.
+5. Determine build extensibility — how to add `-I`, `-l`, `-D`, `-I` for `.mod` files, etc.
+6. Write the SKILL.md following the template at `/skills/code-template/SKILL.md`.
+7. Save to `/skills/my-code/SKILL.md`.
 
-**Important**: the generated skill must NOT reference this profiler, WSS
-macros, PAPI, or any instrumentation. It describes only the user's code.
+The generated skill must NOT reference this profiler, WSS macros, PAPI, or any instrumentation.
 
 ---
 
@@ -634,19 +299,4 @@ macros, PAPI, or any instrumentation. It describes only the user's code.
 - How to build or run the user's code — that is in the user's code skill.
 - What the user's kernels do or what performance is expected.
 - Array-level attribution of hot pages (planned future work).
-- PAPI counter availability on specific microarchitectures — run `papi_avail` inside the container to check.
-
----
-
-## Troubleshooting
-
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `cannot open /proc/self/clear_refs` | Missing privilege | Run container with `--privileged` |
-| `PAPI library init failed` | PAPI not installed or no hardware counter access | Install `libpapi-dev`; may need `--privileged` |
-| `No FP PAPI events available` | Microarchitecture doesn't expose standard events | Run `papi_avail` and use native event names (not yet supported in header) |
-| perf says `Permission denied` | `perf_event_paranoid` too restrictive | Fall back to MPI_Wtime() instrumentation for hotspot discovery. For FLOP counts, report as 0 — hot-byte measurement still works. For the full workflow, ask sysadmin to run `sysctl kernel.perf_event_paranoid=-1` on the host. |
-| FLOP count is 0 | PAPI events not added, or hardware counters not exposed by the host (VM/container) | Check PAPI init messages in stderr. Hot-byte measurement and GPU memory planning still work without FLOP counts — report the hot MB and note that FLOP/byte is unavailable. For the full workflow, `perf_event_paranoid` must be ≤ 1. |
-| Hot MB seems too high | smaps noise (stack, libs) | For large kernels (>50 MB), noise is <5%. For small kernels, interpret with caution. |
-| Hot MB is the same across kernels | clear_refs not working | Verify `--privileged`; check for `[WSS] cannot open` error |
-| PAPI_stop fails or some measurements missing | Nested WSS_BEGIN/WSS_END calls | The profiler cannot be nested — WSS_BEGIN clears the page reference bits and restarts PAPI, destroying any outer measurement. Instrument at one level of the call hierarchy per run. Do separate runs for different levels. |
+- PAPI counter availability on specific microarchitectures — `wss_capability_check` detects this.

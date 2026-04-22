@@ -10,6 +10,8 @@ From: ubuntu:24.04
     wss_profiler/wss_profiler_mod.f90   /usr/local/include/wss_profiler_mod.f90
     wss_profiler/wss_probe_fp_events.c  /usr/local/include/wss_probe_fp_events.c
     wss_profiler/wss_check              /usr/local/bin/wss_check
+    wss_mcp/package.json                /usr/local/lib/wss-mcp/package.json
+    wss_mcp/server.js                   /usr/local/lib/wss-mcp/server.js
 
 %environment
     export DEBIAN_FRONTEND=noninteractive
@@ -56,6 +58,9 @@ From: ubuntu:24.04
     chmod +x /usr/local/bin/wss_probe_fp_events
     chmod +x /usr/local/bin/wss_check
 
+    # Install WSS MCP server dependencies
+    cd /usr/local/lib/wss-mcp && npm install --production
+
     # Bake container setup into bash profile so it runs even when
     # Singularity falls back to sandbox extraction (which skips %runscript).
     cat >> /etc/bash.bashrc << 'BASHRC'
@@ -76,6 +81,19 @@ cp /skills/wss-profiler/SKILL.md "$HOME/.claude/commands/wss-profiler.md" 2>/dev
 if [ -f /skills/my-code/SKILL.md ]; then
     cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
 fi
+
+# Register WSS profiler MCP server in Claude Code settings
+mkdir -p "$HOME/.claude"
+cat > "$HOME/.claude/settings.json" << 'SETTINGS'
+{
+  "mcpServers": {
+    "wss-profiler": {
+      "command": "node",
+      "args": ["/usr/local/lib/wss-mcp/server.js"]
+    }
+  }
+}
+SETTINGS
 
 # Generate environment skill with user-invocable: false so Claude
 # auto-loads it as background knowledge without user action.
@@ -121,6 +139,19 @@ BASHRC
     if [ -f /skills/my-code/SKILL.md ]; then
         cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
     fi
+
+    # Register WSS profiler MCP server in Claude Code settings
+    mkdir -p "$HOME/.claude"
+    cat > "$HOME/.claude/settings.json" << 'SETTINGS'
+{
+  "mcpServers": {
+    "wss-profiler": {
+      "command": "node",
+      "args": ["/usr/local/lib/wss-mcp/server.js"]
+    }
+  }
+}
+SETTINGS
 
     cd /workspace
     exec "$@"
