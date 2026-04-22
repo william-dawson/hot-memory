@@ -36,12 +36,13 @@ From: ubuntu:24.04
     # Build libpfm4 from source — the apt version lags new PMU support (e.g.
     # ARM Grace/Neoverse). Building from HEAD compiles in all known PMUs on
     # any architecture with no architecture-specific configuration.
-    # Install to /usr (same prefix as apt) so PAPI picks it up at runtime
-    # without needing LD_LIBRARY_PATH.
+    # Find wherever apt installed libpfm4 and overwrite it in-place so PAPI
+    # picks up the new version without any PATH/linker changes.
     git clone --depth=1 https://git.code.sf.net/p/perfmon2/libpfm4 /tmp/libpfm4
-    make -C /tmp/libpfm4 -j$(nproc) PREFIX=/usr
-    make -C /tmp/libpfm4 install PREFIX=/usr
-    ldconfig
+    make -C /tmp/libpfm4 -j$(nproc)
+    PFM_LIB=$(ldconfig -p | grep 'libpfm\.so\.4 ' | awk '{print $NF}' | head -1) \
+    && cp /tmp/libpfm4/lib/libpfm.so.4.* $(dirname "$PFM_LIB")/ \
+    && ldconfig
     rm -rf /tmp/libpfm4
 
     # Node.js + Claude Code installed to a fixed system path
