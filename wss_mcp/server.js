@@ -1,7 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
 // ── State persisted across tool calls ─────────────────────────────────────────
@@ -11,17 +11,19 @@ const state = {
 };
 
 // ── Shell helper ───────────────────────────────────────────────────────────────
+// Async so long-running profiling jobs don't block the MCP server event loop.
 function sh(cmd, extraEnv = {}) {
-  const result = spawnSync('/bin/sh', ['-c', cmd], {
-    encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024,
-    env: { ...process.env, ...extraEnv },
+  return new Promise((resolve) => {
+    const proc = spawn('/bin/sh', ['-c', cmd], {
+      env: { ...process.env, ...extraEnv },
+    });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (d) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('close', (code) => resolve({ stdout, stderr, exitCode: code ?? -1 }));
+    proc.on('error', (err) => resolve({ stdout, stderr: err.message, exitCode: -1 }));
   });
-  return {
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
-    exitCode: result.status ?? -1,
-  };
 }
 
 // ── MPI rank-0 wrapper ─────────────────────────────────────────────────────────
@@ -170,13 +172,13 @@ async function wssCapabilityCheck(args) {
   const unavailable = [];
 
   // 1. Architecture
-  const archResult = sh('uname -m');
+  const archResult = await sh('uname -m');
   const arch = archResult.stdout.trim();
 
   // 2. PAPI component check
   let papiComponent = 'not_found';
   let papiComponentError = '';
-  const papiCompResult = sh('papi_component_avail 2>&1');
+  const papiCompResult = await sh('papi_component_avail 2>&1');
   if (papiCompResult.exitCode === 127 || papiCompResult.stdout.includes('command not found')) {
     papiComponent = 'not_found';
     papiComponentError = 'papi_component_avail not found in PATH';
@@ -194,7 +196,7 @@ async function wssCapabilityCheck(args) {
   const papiFpEvents = [];
   const papiMemEvents = [];
   if (papiComponent === 'ok') {
-    const papiAvailResult = sh('papi_avail 2>&1');
+    const papiAvailResult = await sh('papi_avail 2>&1');
     const papiLines = papiAvailResult.stdout.split('\n');
     for (const line of papiLines) {
       if (/PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS/.test(line) && /Yes/.test(line)) {
@@ -221,13 +223,13 @@ async function wssCapabilityCheck(args) {
   }
 
   // 4. perf_event_paranoid
-  const paranoidResult = sh('cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null');
+  const paranoidResult = await sh('cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null');
   const perfEventParanoid = paranoidResult.exitCode === 0
     ? parseInt(paranoidResult.stdout.trim(), 10)
     : null;
 
   // 5. perf stat test
-  const perfStatResult = sh('perf stat -e cycles -- echo ok 2>&1');
+  const perfStatResult = await sh('perf stat -e cycles -- echo ok 2>&1');
   const perfStatOk = perfStatResult.exitCode === 0 && !perfStatResult.stdout.includes('Permission denied');
   if (perfStatOk) {
     available.push('perf sampling (hotspot discovery via perf record/report)');
@@ -241,7 +243,7 @@ async function wssCapabilityCheck(args) {
   if (papiFpEvents.length === 0) {
     const probeCodes = extraCodes.join(' ');
     const probeCmd = `wss_probe_fp_events ${probeCodes} 2>&1`;
-    const probeResult = sh(probeCmd);
+    const probeResult = await sh(probeCmd);
     fpProbeOutput = probeResult.stdout + (probeResult.stderr || '');
 
     // Parse WSS_PERF_FP_EVENTS=... from stdout
@@ -289,7 +291,7 @@ async function wssCapabilityCheck(args) {
 async function wssMeasureBaseline(args) {
   const { mpirun_prefix: mpirunPrefix = '', binary_command: binaryCommand } = args;
   const cmd = buildMpiRank0Command(mpirunPrefix, '/usr/bin/time -v', binaryCommand);
-  const result = sh(cmd);
+  const result = await sh(cmd);
   const combined = result.stdout + result.stderr;
 
   let peakRssMb = null;
@@ -317,9 +319,9 @@ async function wssPerfProfile(args) {
     'perf record -g -F 99 -o /tmp/wss_perf.data --',
     binaryCommand,
   );
-  const recordResult = sh(recordCmd);
+  const recordResult = await sh(recordCmd);
 
-  const reportResult = sh(
+  const reportResult = await sh(
     'perf report -n --stdio --no-children -i /tmp/wss_perf.data 2>/dev/null | head -80',
   );
 
@@ -355,7 +357,7 @@ async function wssRunProfiled(args) {
     // extraEnv carries WSS_PERF_FP_EVENTS
   }
 
-  const result = sh(cmd, extraEnv);
+  const result = await sh(cmd, extraEnv);
   const combined = result.stdout + result.stderr;
   const { measurements, errors, initMessages } = parseWssOutput(combined);
 
