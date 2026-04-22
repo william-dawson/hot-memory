@@ -92,30 +92,51 @@ perf stat echo ok 2>&1
 | `perf stat` works | perf stat echo ok | Phase 2 hotspot discovery via sampling |
 | `/proc/self/clear_refs` writable | Always works with `--fakeroot` | Hot-byte measurement (the core metric) |
 
-**If PAPI FP events are unavailable but `perf stat` works**, the profiler
-can fall back to raw PMU event codes. Probe for a working FP event:
+**If PAPI FP events are unavailable**, the profiler can fall back to raw
+PMU event codes via `perf_event_open`. Use the probe tool to discover
+which codes work on this machine:
 
 ```bash
-# ARM PMU v3 standard FP events (try both):
-perf stat -e armv8_pmuv3_0/event=0x74/ -- sleep 1 2>&1   # FP_FIXED_OPS_SPEC
-perf stat -e armv8_pmuv3_0/event=0x75/ -- sleep 1 2>&1   # FP_SCALE_OPS_SPEC (SVE)
-# On other architectures, consult perf list and the CPU PMU manual.
+wss_probe_fp_events 2>&1          # see diagnostic output
+eval $(wss_probe_fp_events)       # sets WSS_PERF_FP_EVENTS in the shell
+echo $WSS_PERF_FP_EVENTS          # e.g. "0x74,0x75"
 ```
 
-If a raw event counts successfully, pass it as a build flag:
+The probe tool tests a set of candidate codes, runs a small FP benchmark
+with `exclude_kernel=1` (matching the profiler exactly), and prints which
+codes actually counted. The `eval` captures the result as an env var. The
+profiler reads `WSS_PERF_FP_EVENTS` at `WSS_INIT()` time and opens one
+counter fd per code, summing them all — so **run the profiled binary in
+the same shell where you ran `eval`**, or export it explicitly.
+
+On aarch64 the probe tries 0x74 (`FP_FIXED_OPS_SPEC`, scalar/NEON/ASIMD)
+and 0x75 (`FP_SCALE_OPS_SPEC`, SVE) by default. Modern ARM cores like
+Grace use SVE for vectorised code, so you typically need both. You can
+pass additional codes explicitly: `wss_probe_fp_events 0x74 0x75 0x1b`.
+On other architectures pass codes manually — consult `perf list` and your
+CPU's PMU reference manual for candidates.
+
+If the probe produces nothing (all codes return 0), the PMU may not be
+exposed to userspace. Check `perf_event_paranoid` and container flags.
+To dig into what's happening manually:
+```bash
+# These use the kernel-visible event (no exclude_kernel) — useful for
+# confirming the PMU works at all, not for profiler use:
+perf stat -e armv8_pmuv3_0/event=0x74/ -- sleep 1 2>&1
+perf stat -e armv8_pmuv3_0/event=0x75/ -- sleep 1 2>&1
 ```
--DWSS_PERF_FP_EVENT=0x74
-```
-The profiler will use `perf_event_open` with that code on aarch64 when
-PAPI provides no FP events. If no raw FP event works, FLOPs will be 0.
+If those count but the probe returns 0, the PMU exposes kernel ops but
+not userspace — a container privilege issue.
+
+If no raw FP event works, FLOPs will be 0; hot-byte measurement still works.
 
 Example report:
 ```
 Capability check:
   ✓ Hot-byte measurement (/proc/clear_refs)
   ✓ perf sampling (hotspot discovery)
-  ✗ PAPI FP counters — trying perf_event_open fallback
-    ✓ Raw event 0x74 (FP_FIXED_OPS_SPEC) works — use -DWSS_PERF_FP_EVENT=0x74
+  ✗ PAPI FP counters
+  ✓ perf_event_open fallback: WSS_PERF_FP_EVENTS=0x74,0x75
   ✗ Load/store counters (PAPI_LD_INS/SR_INS not available)
 
 Available metrics: hot MB, % of peak, perf hotspots, FLOPs via raw PMU.
@@ -391,15 +412,15 @@ ships a static library (`libwss_profiler.a`) and Fortran module file
    ```
    make EXTRA_CFLAGS="-DPROFILE_WSS" EXTRA_LDFLAGS="-lwss_profiler -lpapi"
    ```
-   If Phase 0 identified a working raw FP event code, add it to CFLAGS:
-   ```
-   make EXTRA_CFLAGS="-DPROFILE_WSS -DWSS_PERF_FP_EVENT=0x74" EXTRA_LDFLAGS="-lwss_profiler -lpapi"
-   ```
    Adapt the make invocation to the user's actual build system (CMake, manual gcc invocation, etc.).
 
-4. **Run normally** (same command as always):
+4. **Run** (if Phase 0 set `WSS_PERF_FP_EVENTS`, run in the same shell):
    ```bash
    mpirun -np <N> ./solver test/small.cfg
+   ```
+   If the env var isn't already exported from Phase 0, set it inline:
+   ```bash
+   WSS_PERF_FP_EVENTS=0x74,0x75 mpirun -np <N> ./solver test/small.cfg
    ```
 
 5. **Capture stderr from rank 0**. The report lines go to stderr. Redirect or tee to capture:
