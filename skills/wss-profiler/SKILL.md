@@ -68,79 +68,123 @@ until the baseline build and run are confirmed working.
 ## Phase 0: Capability check
 
 ### When to use
-Always. Run this first, before anything else, to determine what metrics
-this machine can provide.
+Always. Run this first, before anything else. The goal is to know exactly
+what this machine can measure before touching any user code.
 
-### What to do
+### OMP_NUM_THREADS is always 1
 
-1. **Check PAPI counter availability**:
+`OMP_NUM_THREADS=1` is set in the container environment. OpenMP is never
+active, never a source of measurement error, and never a cause of counter
+failures. **Never blame OpenMP for a counter problem.** If something doesn't
+work, the cause is one of the three things listed below.
+
+### Three possible failure modes for FP counting
+
+FP counting can fail in three distinct ways. Diagnose each one separately:
+
+**1. PAPI can't identify the CPU** (libpfm4 doesn't know this microarchitecture)
 ```bash
+papi_component_avail 2>&1 | grep -A3 perf_event
+papi_avail 2>&1 | grep -E 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS'
+```
+If PAPI says "no default PMU found" or shows no FP events, this is the
+libpfm4 problem. It is a known issue on new CPUs (e.g. ARM Grace, CPUID
+0xd87) where libpfm4 has no entry yet. PAPI will not work for FP here.
+Proceed to the perf fallback below.
+
+**2. perf_event_open is blocked by the kernel** (permission/paranoia)
+```bash
+perf stat -e cycles -- echo ok 2>&1
+cat /proc/sys/kernel/perf_event_paranoid
+```
+If `perf stat` fails with "Permission denied", the host kernel blocks
+hardware counters. This requires a sysadmin fix (`perf_event_paranoid=-1`
+or running with `--privileged`). Hot-byte measurement still works; FLOPs
+will be 0.
+
+**3. Wrong event code for this CPU's ISA** (opens OK, counts 0 in userspace)
+This is the most subtle failure. `perf_event_open` succeeds and returns a
+valid fd, but the counter reads 0 for user code. This happens when the
+event code doesn't match the instruction set the compiler generated:
+- 0x74 (`FP_FIXED_OPS_SPEC`) counts scalar and NEON/ASIMD ops
+- 0x75 (`FP_SCALE_OPS_SPEC`) counts SVE ops
+On modern ARM cores (Grace, Neoverse V2), the compiler vectorises to SVE
+by default — 0x74 will count nothing for that code even though it opens
+successfully. You need to find **all** the codes that count for this
+machine's userspace code, not just any code that opens without error.
+
+### Step-by-step
+
+1. **Check PAPI** (failure mode 1):
+```bash
+papi_component_avail 2>&1 | grep -A3 perf_event
 papi_avail 2>&1 | grep -E 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS|PAPI_LD_INS|PAPI_SR_INS'
 ```
 
-2. **Check perf availability**:
+2. **Check perf is accessible** (failure mode 2):
 ```bash
-perf stat echo ok 2>&1
+perf stat -e cycles -- echo ok 2>&1
 ```
 
-3. **Report to the user** what metrics are available on this machine:
-
-| Capability | How to check | What it enables |
-|------------|-------------|-----------------|
-| `PAPI_DP_OPS` + `PAPI_SP_OPS` (or `PAPI_FP_OPS`) | papi_avail | FLOP counts, FLOP/byte ratios |
-| `PAPI_LD_INS` + `PAPI_SR_INS` | papi_avail | Total bytes accessed, reuse factor, roofline-style arithmetic intensity |
-| `perf stat` works | perf stat echo ok | Phase 2 hotspot discovery via sampling |
-| `/proc/self/clear_refs` writable | Always works with `--fakeroot` | Hot-byte measurement (the core metric) |
-
-**If PAPI FP events are unavailable**, the profiler can fall back to raw
-PMU event codes via `perf_event_open`. Use the probe tool to discover
-which codes work on this machine:
-
+3. **If PAPI has no FP events, run the probe tool** (failure mode 3):
 ```bash
-wss_probe_fp_events 2>&1          # see diagnostic output
+wss_probe_fp_events 2>&1          # full diagnostic output — read it carefully
 eval $(wss_probe_fp_events)       # sets WSS_PERF_FP_EVENTS in the shell
-echo $WSS_PERF_FP_EVENTS          # e.g. "0x74,0x75"
+echo $WSS_PERF_FP_EVENTS          # must be non-empty, e.g. "0x74,0x75"
 ```
+The probe runs a small FP benchmark with `exclude_kernel=1` (exactly
+matching the profiler) and reports counts for each candidate code. **Read
+every line.** A code that opens but returns 0 is not working — it means the
+ISA mismatch (failure mode 3). Only codes with non-zero counts are included
+in `WSS_PERF_FP_EVENTS`.
 
-The probe tool tests a set of candidate codes, runs a small FP benchmark
-with `exclude_kernel=1` (matching the profiler exactly), and prints which
-codes actually counted. The `eval` captures the result as an env var. The
-profiler reads `WSS_PERF_FP_EVENTS` at `WSS_INIT()` time and opens one
-counter fd per code, summing them all — so **run the profiled binary in
-the same shell where you ran `eval`**, or export it explicitly.
-
-On aarch64 the probe tries 0x74 (`FP_FIXED_OPS_SPEC`, scalar/NEON/ASIMD)
-and 0x75 (`FP_SCALE_OPS_SPEC`, SVE) by default. Modern ARM cores like
-Grace use SVE for vectorised code, so you typically need both. You can
-pass additional codes explicitly: `wss_probe_fp_events 0x74 0x75 0x1b`.
-On other architectures pass codes manually — consult `perf list` and your
-CPU's PMU reference manual for candidates.
-
-If the probe produces nothing (all codes return 0), the PMU may not be
-exposed to userspace. Check `perf_event_paranoid` and container flags.
-To dig into what's happening manually:
+On aarch64 the probe tests 0x74 (scalar/NEON/ASIMD) and 0x75 (SVE) by
+default. You want **both** if both count — they cover different instruction
+sets with no double-counting. If you suspect more codes are relevant,
+pass them explicitly:
 ```bash
-# These use the kernel-visible event (no exclude_kernel) — useful for
-# confirming the PMU works at all, not for profiler use:
+wss_probe_fp_events 0x74 0x75 0x1b 0x3c
+```
+Consult `perf list` and the CPU PMU reference manual for other candidates.
+
+If you want to cross-check manually (note: these count kernel ops too,
+so counts will be higher than the probe — use only for PMU reachability):
+```bash
 perf stat -e armv8_pmuv3_0/event=0x74/ -- sleep 1 2>&1
 perf stat -e armv8_pmuv3_0/event=0x75/ -- sleep 1 2>&1
 ```
-If those count but the probe returns 0, the PMU exposes kernel ops but
-not userspace — a container privilege issue.
+If these count but the probe returns 0 for the same codes, you have a
+userspace-access permission problem (failure mode 2), not an ISA mismatch.
 
-If no raw FP event works, FLOPs will be 0; hot-byte measurement still works.
+4. **Report to the user** before proceeding:
+
+| Capability | How to check | What it enables |
+|------------|-------------|-----------------|
+| `PAPI_DP_OPS` + `PAPI_SP_OPS` (or `PAPI_FP_OPS`) | papi_avail | FLOP counts |
+| `PAPI_LD_INS` + `PAPI_SR_INS` | papi_avail | Total bytes accessed, reuse factor |
+| `perf stat` works | perf stat -e cycles echo ok | Phase 2 hotspot discovery |
+| `WSS_PERF_FP_EVENTS` non-empty | wss_probe_fp_events | FLOP counts via perf fallback |
+| `/proc/self/clear_refs` writable | Always with `--fakeroot` | Hot-byte measurement (core metric) |
 
 Example report:
 ```
 Capability check:
   ✓ Hot-byte measurement (/proc/clear_refs)
   ✓ perf sampling (hotspot discovery)
-  ✗ PAPI FP counters
+  ✗ PAPI FP counters (libpfm4 doesn't know this CPU — known issue on Grace)
   ✓ perf_event_open fallback: WSS_PERF_FP_EVENTS=0x74,0x75
+      0x74 (scalar/NEON): 12483 ops ✓
+      0x75 (SVE):         98432 ops ✓   ← SVE dominant: compiler vectorised to SVE
   ✗ Load/store counters (PAPI_LD_INS/SR_INS not available)
 
 Available metrics: hot MB, % of peak, perf hotspots, FLOPs via raw PMU.
 Not available: total bytes accessed, reuse factor.
+```
+
+**Run the profiled binary in the same shell where you ran `eval`**, or
+set the env var inline:
+```bash
+WSS_PERF_FP_EVENTS=0x74,0x75 mpirun -np <N> ./solver ...
 ```
 
 This sets expectations before any work begins. Do not proceed to
