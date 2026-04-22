@@ -126,35 +126,23 @@ papi_avail 2>&1 | grep -E 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS|PAPI_LD_INS|PAPI_
 perf stat -e cycles -- echo ok 2>&1
 ```
 
-3. **If PAPI has no FP events, run the probe tool** (failure mode 3):
+3. **Run `wss_check`** — this does everything in one shot:
 ```bash
-wss_probe_fp_events 2>&1          # full diagnostic output — read it carefully
-eval $(wss_probe_fp_events)       # sets WSS_PERF_FP_EVENTS in the shell
-echo $WSS_PERF_FP_EVENTS          # must be non-empty, e.g. "0x74,0x75"
+wss_check
 ```
-The probe runs a small FP benchmark with `exclude_kernel=1` (exactly
-matching the profiler) and reports counts for each candidate code. **Read
-every line.** A code that opens but returns 0 is not working — it means the
-ISA mismatch (failure mode 3). Only codes with non-zero counts are included
-in `WSS_PERF_FP_EVENTS`.
+It checks PAPI, perf, runs the FP probe, tests `clear_refs`, and prints a
+structured report with a recommended `export` line. Read the full output.
+If you suspect additional FP event codes are relevant on this platform,
+pass them as arguments (they are forwarded to the probe tool):
+```bash
+wss_check 0x74 0x75 0x1b 0x3c
+```
 
-On aarch64 the probe tests 0x74 (scalar/NEON/ASIMD) and 0x75 (SVE) by
-default. You want **both** if both count — they cover different instruction
-sets with no double-counting. If you suspect more codes are relevant,
-pass them explicitly:
-```bash
-wss_probe_fp_events 0x74 0x75 0x1b 0x3c
-```
-Consult `perf list` and the CPU PMU reference manual for other candidates.
-
-If you want to cross-check manually (note: these count kernel ops too,
-so counts will be higher than the probe — use only for PMU reachability):
-```bash
-perf stat -e armv8_pmuv3_0/event=0x74/ -- sleep 1 2>&1
-perf stat -e armv8_pmuv3_0/event=0x75/ -- sleep 1 2>&1
-```
-If these count but the probe returns 0 for the same codes, you have a
-userspace-access permission problem (failure mode 2), not an ISA mismatch.
+The probe inside `wss_check` uses `exclude_kernel=1`, matching the profiler
+exactly. **A code that opens but returns 0 is not working** — that is the
+ISA mismatch (failure mode 3), not a permission problem. If `wss_check`
+says no codes worked but `perf stat -e armv8_pmuv3_0/event=0x75/ -- sleep 1`
+counts something, you have a container privilege issue, not an ISA mismatch.
 
 4. **Report to the user** before proceeding:
 

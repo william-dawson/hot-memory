@@ -2,12 +2,14 @@ Bootstrap: docker
 From: ubuntu:24.04
 
 %files
-    skills/wss-profiler/SKILL.md      /skills/wss-profiler/SKILL.md
-    wss_profiler/wss_profiler.h       /skills/wss-profiler/wss_profiler.h
-    wss_profiler/wss_profiler.h       /usr/local/include/wss_profiler.h
-    wss_profiler/wss_profiler.c       /usr/local/include/wss_profiler.c
-    wss_profiler/wss_profiler_f.c     /usr/local/include/wss_profiler_f.c
-    wss_profiler/wss_profiler_mod.f90 /usr/local/include/wss_profiler_mod.f90
+    skills/wss-profiler/SKILL.md        /skills/wss-profiler/SKILL.md
+    wss_profiler/wss_profiler.h         /skills/wss-profiler/wss_profiler.h
+    wss_profiler/wss_profiler.h         /usr/local/include/wss_profiler.h
+    wss_profiler/wss_profiler.c         /usr/local/include/wss_profiler.c
+    wss_profiler/wss_profiler_f.c       /usr/local/include/wss_profiler_f.c
+    wss_profiler/wss_profiler_mod.f90   /usr/local/include/wss_profiler_mod.f90
+    wss_profiler/wss_probe_fp_events.c  /usr/local/include/wss_probe_fp_events.c
+    wss_profiler/wss_check              /usr/local/bin/wss_check
 
 %environment
     export DEBIAN_FRONTEND=noninteractive
@@ -48,6 +50,11 @@ From: ubuntu:24.04
     ar rcs /usr/local/lib/libwss_profiler.a wss_profiler.o wss_profiler_f.o wss_profiler_mod.o
     cp wss_profiler_mod.mod /usr/local/include/ 2>/dev/null || true
     rm -f wss_profiler.o wss_profiler_f.o wss_profiler_mod.o
+
+    # Build and install diagnostic tools
+    gcc -O2 -o /usr/local/bin/wss_probe_fp_events /usr/local/include/wss_probe_fp_events.c
+    chmod +x /usr/local/bin/wss_probe_fp_events
+    chmod +x /usr/local/bin/wss_check
 
     # Bake container setup into bash profile so it runs even when
     # Singularity falls back to sandbox extraction (which skips %runscript).
