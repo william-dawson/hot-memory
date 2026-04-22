@@ -18,17 +18,25 @@
  *   load/store counters are available. Otherwise they show as 0.
  *
  * FP counting:
- *   PAPI is tried first. On aarch64 machines where PAPI's perf_event
- *   component cannot initialize (e.g. libpfm4 doesn't know the CPU),
- *   the profiler falls back to perf_event_open with raw ARM PMU event
- *   0x74 (FP_FIXED_OPS_SPEC). This covers fixed-width FP ops (scalar +
- *   NEON/ASIMD). SVE variable-width FP ops (event 0x75) are NOT counted
- *   as their element count depends on vector length.
+ *   PAPI is tried first. If PAPI provides no FP events (e.g. libpfm4 doesn't
+ *   know the CPU), the profiler falls back to perf_event_open with raw PMU
+ *   event codes supplied at runtime via the WSS_PERF_FP_EVENTS env var.
+ *
+ *   WSS_PERF_FP_EVENTS is a comma-separated list of hex event codes to open,
+ *   one fd per code. Their counts are summed. Use wss_probe_fp_events to
+ *   discover which codes work on this machine before running the profiler:
+ *
+ *     eval $(wss_probe_fp_events)         # sets WSS_PERF_FP_EVENTS
+ *     mpirun -np 4 ./solver ...           # profiler reads the env var
+ *
+ *   On ARM Grace, both 0x74 (scalar/NEON/ASIMD) and 0x75 (SVE) are needed
+ *   for complete FP coverage. The probe tool discovers the right codes.
+ *   If WSS_PERF_FP_EVENTS is not set and PAPI has no FP events, FLOPs = 0.
  *
  * Requirements:
  *   - Linux amd64 or aarch64 (uses /proc/self/clear_refs and /proc/self/smaps)
  *   - PAPI (libpapi-dev) for FP and load/store counting (optional: degrades
- *     gracefully; on aarch64 FP falls back to perf_event_open)
+ *     gracefully; perf_event_open fallback used when PAPI FP unavailable)
  *   - MPI (for rank filtering; works with or without OpenMP)
  *   - CAP_SYS_RESOURCE or root to write clear_refs (run container --privileged
  *     or --fakeroot)
@@ -56,14 +64,17 @@
  * The definitions live in wss_profiler.c, compiled into libwss_profiler.a.
  * Link with: -lwss_profiler -lpapi
  */
+#define WSS_MAX_FP_EVENTS 8       /* max raw PMU event codes in WSS_PERF_FP_EVENTS */
+
 extern int    _wss_rank;
 extern int    _wss_eventset;
-extern int    _wss_nfp_events;    /* how many PAPI FP counters are live */
-extern int    _wss_nmem_events;   /* how many PAPI load/store counters are live */
-extern int    _wss_nevents;       /* total PAPI counters: FP + mem */
-extern int    _wss_papi_ok;       /* PAPI library initialized */
-extern int    _wss_active;        /* 1 between WSS_BEGIN and WSS_END */
-extern int    _wss_fp_fd;         /* perf_event_open fd for FP fallback (-1 = unused) */
+extern int    _wss_nfp_events;              /* how many PAPI FP counters are live */
+extern int    _wss_nmem_events;             /* how many PAPI load/store counters are live */
+extern int    _wss_nevents;                 /* total PAPI counters: FP + mem */
+extern int    _wss_papi_ok;                 /* PAPI library initialized */
+extern int    _wss_active;                  /* 1 between WSS_BEGIN and WSS_END */
+extern int    _wss_fp_fds[WSS_MAX_FP_EVENTS]; /* perf_event_open fds for FP fallback */
+extern int    _wss_n_fp_fds;               /* number of open perf FP fds */
 
 /* ── internal helpers (defined inline to avoid duplicate-symbol errors) ─── */
 
@@ -119,54 +130,132 @@ static inline void _wss_papi_init(void)
 }
 
 /*
- * _wss_perf_fp_init() — open a perf_event_open fd for FP counting.
+ * _wss_perf_fp_init() — open perf_event_open fds for FP counting.
  *
  * Called after _wss_papi_init(). Only activates when PAPI provided no FP
- * events (_wss_nfp_events == 0). On non-aarch64 this is a no-op — those
- * platforms should have working PAPI FP events.
+ * events (_wss_nfp_events == 0).
  *
- * Event 0x74 = FP_FIXED_OPS_SPEC: fixed-width FP ops speculatively executed
- * (scalar + NEON/ASIMD). Defined in the ARM PMU v3 architecture spec and
- * available on chips where libpfm4 may not yet have a PMU entry.
+ * Reads WSS_PERF_FP_EVENTS from the environment — a comma-separated list of
+ * raw PMU event codes in hex, e.g. "0x74,0x75". One fd is opened per code;
+ * their counts are summed at WSS_END. Only codes that pass a smoke test
+ * (counter actually increments in userspace) are kept.
+ *
+ * Obtain the right codes for your machine using the probe tool:
+ *   eval $(wss_probe_fp_events)
+ *   mpirun -np 4 ./solver ...
+ *
+ * If WSS_PERF_FP_EVENTS is not set, FP counting via this path is skipped
+ * (PAPI may still provide it; otherwise FLOPs will be 0).
  */
 static inline void _wss_perf_fp_init(void)
 {
-#ifdef __aarch64__
     if (_wss_nfp_events > 0)
         return;  /* PAPI already has FP covered */
 
-    /*
-     * WSS_PERF_FP_EVENT selects the raw PMU event code for FP counting.
-     * Override at compile time: -DWSS_PERF_FP_EVENT=0xNN
-     * Default 0x74 = FP_FIXED_OPS_SPEC from the ARM PMU v3 architecture spec.
-     * If this fails at runtime, the agent should run:
-     *   perf stat -e rNN ./binary   (try candidate codes)
-     * and pass the working code as -DWSS_PERF_FP_EVENT=0xNN in CFLAGS.
-     */
-#ifndef WSS_PERF_FP_EVENT
-#define WSS_PERF_FP_EVENT 0x74
-#endif
-
-    struct perf_event_attr pe = {0};
-    pe.size           = sizeof(struct perf_event_attr);
-    pe.type           = PERF_TYPE_RAW;
-    pe.config         = WSS_PERF_FP_EVENT;
-    pe.disabled       = 1;
-    pe.exclude_kernel = 1;
-    pe.exclude_hv     = 1;
-    pe.inherit        = 0;
-
-    _wss_fp_fd = (int)syscall(__NR_perf_event_open, &pe,
-                               0 /*pid: self*/, -1 /*cpu: any*/,
-                               -1 /*group*/, 0 /*flags*/);
-    if (_wss_fp_fd < 0) {
-        fprintf(stderr, "[WSS] perf_event_open(FP_FIXED_OPS_SPEC) failed: %m"
-                        " — FLOPs will be 0\n");
-    } else {
-        fprintf(stderr, "[WSS] Using perf_event_open for FP counting"
-                        " (aarch64 fallback, event 0x74)\n");
+    const char *env = getenv("WSS_PERF_FP_EVENTS");
+    if (!env || env[0] == '\0') {
+        fprintf(stderr, "[WSS] WSS_PERF_FP_EVENTS not set — FP counting via"
+                        " perf_event_open disabled. Run eval $(wss_probe_fp_events)"
+                        " before profiling to enable it.\n");
+        return;
     }
-#endif
+
+    /* Parse comma-separated hex codes, e.g. "0x74,0x75" */
+    char buf[256];
+    strncpy(buf, env, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    char *tok = buf;
+    char *next;
+    while (tok && *tok && _wss_n_fp_fds < WSS_MAX_FP_EVENTS) {
+        /* find next comma */
+        next = strchr(tok, ',');
+        if (next) *next++ = '\0';
+
+        /* trim whitespace */
+        while (*tok == ' ' || *tok == '\t') tok++;
+
+        unsigned long code = strtoul(tok, NULL, 0);
+        if (code == 0) { tok = next; continue; }
+
+        struct perf_event_attr pe = {0};
+        pe.size           = sizeof(pe);
+        pe.type           = PERF_TYPE_RAW;
+        pe.config         = code;
+        pe.disabled       = 1;
+        pe.exclude_kernel = 1;
+        pe.exclude_hv     = 1;
+        pe.inherit        = 0;
+
+        int fd = (int)syscall(__NR_perf_event_open, &pe,
+                              0 /*pid: self*/, -1 /*cpu: any*/,
+                              -1 /*group*/, 0 /*flags*/);
+        if (fd < 0) {
+            fprintf(stderr, "[WSS] perf_event_open(event=0x%lx) failed: %m"
+                            " — skipping this code\n", code);
+            tok = next;
+            continue;
+        }
+
+        /* Smoke-test: verify the counter increments for userspace FP.
+         * perf_event_open can succeed but read 0 forever when the PMU
+         * is not accessible from userspace (some containers, VMs). */
+        ioctl(fd, PERF_EVENT_IOC_RESET,  0);
+        ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+        {
+            double _wss_smoke[64];
+            for (int _k = 0; _k < 64; _k++) _wss_smoke[_k] = (double)(_k + 1);
+            for (int _rep = 0; _rep < 1000; _rep++)
+                for (int _k = 0; _k < 64; _k++)
+                    _wss_smoke[_k] = _wss_smoke[_k] * 1.0000001 + 1e-15;
+            volatile double _wss_sink = _wss_smoke[0]; (void)_wss_sink;
+        }
+        ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+        long long smoke_count = 0;
+        read(fd, &smoke_count, sizeof(long long));
+        ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+
+        if (smoke_count == 0) {
+            fprintf(stderr, "[WSS] perf_event_open(event=0x%lx) opened but reads 0"
+                            " (PMU not exposed in userspace) — skipping\n", code);
+            close(fd);
+            tok = next;
+            continue;
+        }
+
+        fprintf(stderr, "[WSS] perf_event_open FP fallback: event 0x%lx"
+                        " smoke=%lld ops ✓\n", code, smoke_count);
+        _wss_fp_fds[_wss_n_fp_fds++] = fd;
+        tok = next;
+    }
+
+    if (_wss_n_fp_fds == 0)
+        fprintf(stderr, "[WSS] No WSS_PERF_FP_EVENTS codes worked — FLOPs will be 0\n");
+    else
+        fprintf(stderr, "[WSS] Using %d perf_event_open fd(s) for FP counting\n",
+                _wss_n_fp_fds);
+}
+
+/* Reset and enable all perf FP fds — called at WSS_BEGIN */
+static inline void _wss_perf_start(void)
+{
+    for (int _i = 0; _i < _wss_n_fp_fds; _i++) {
+        ioctl(_wss_fp_fds[_i], PERF_EVENT_IOC_RESET,  0);
+        ioctl(_wss_fp_fds[_i], PERF_EVENT_IOC_ENABLE, 0);
+    }
+}
+
+/* Disable all perf FP fds and return sum of counts — called at WSS_END */
+static inline long long _wss_perf_stop(void)
+{
+    long long _total = 0;
+    for (int _i = 0; _i < _wss_n_fp_fds; _i++) {
+        ioctl(_wss_fp_fds[_i], PERF_EVENT_IOC_DISABLE, 0);
+        long long _c = 0;
+        read(_wss_fp_fds[_i], &_c, sizeof(long long));
+        _total += _c;
+    }
+    return _total;
 }
 
 static inline void _wss_clear_refs(void)
@@ -236,10 +325,7 @@ static inline long long _wss_read_referenced_kb(void)
                 _wss_clear_refs(); \
                 if (_wss_eventset != PAPI_NULL) \
                     PAPI_start(_wss_eventset); \
-                if (_wss_fp_fd >= 0) { \
-                    ioctl(_wss_fp_fd, PERF_EVENT_IOC_RESET, 0); \
-                    ioctl(_wss_fp_fd, PERF_EVENT_IOC_ENABLE, 0); \
-                } \
+                _wss_perf_start(); \
             } \
         } \
     } while (0)
@@ -266,11 +352,7 @@ static inline long long _wss_read_referenced_kb(void)
             long long _wss_vals[8] = {0}; \
             if (_wss_eventset != PAPI_NULL) \
                 PAPI_stop(_wss_eventset, _wss_vals); \
-            long long _wss_perf_fp = 0; \
-            if (_wss_fp_fd >= 0) { \
-                ioctl(_wss_fp_fd, PERF_EVENT_IOC_DISABLE, 0); \
-                read(_wss_fp_fd, &_wss_perf_fp, sizeof(long long)); \
-            } \
+            long long _wss_perf_fp = _wss_perf_stop(); \
             long long _wss_ref_kb  = _wss_read_referenced_kb(); \
             long long _wss_flops   = _wss_perf_fp; \
             for (int _i = 0; _i < _wss_nfp_events; _i++) \
