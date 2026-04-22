@@ -13,7 +13,7 @@
  * synchronise and add realistic communication overhead.
  *
  * Build (inside the profiler container):
- *   mpicc -O2 -fopenmp -DPROFILE_WSS bench.c -o bench -lpapi
+ *   mpicc -O2 -fopenmp -DPROFILE_WSS bench.c -o bench -lwss_profiler -lpapi
  *
  * Build without profiling (macros compile away):
  *   mpicc -O2 -fopenmp bench.c -o bench
@@ -87,7 +87,7 @@ int main(int argc, char **argv)
     }
     for (long i = 0; i < COMPUTE_N; i++) x[i] = (double)(i + rank);
 
-    /* ── Phase 2 instrumentation ── */
+    /* ── Phase 3 instrumentation ── */
 
     MPI_Barrier(MPI_COMM_WORLD);
 

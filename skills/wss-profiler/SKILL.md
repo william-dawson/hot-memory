@@ -229,7 +229,7 @@ Which ones should I dig into?
 The user has identified specific kernels (from Phase 2 or from domain knowledge) and wants hot byte count + FLOP count.
 
 ### OpenMP warning
-**PAPI counters (FLOPs, load/store counts) only instrument the main thread.** OpenMP worker threads are NOT counted. The hot-byte measurement (`/proc/self/smaps`) IS process-wide and includes all threads. For OpenMP codes:
+**Hardware counters (PAPI and the perf_event_open fallback) only instrument the main thread.** OpenMP worker threads are NOT counted. The hot-byte measurement (`/proc/self/smaps`) IS process-wide and includes all threads. For OpenMP codes:
 - Hot MB is accurate — use it for GPU memory planning.
 - FLOP counts, total bytes accessed, and all derived ratios (FLOP/byte, reuse factor) are **lower bounds only**. Always state this when reporting results for OpenMP codes.
 
@@ -239,8 +239,8 @@ The user has identified specific kernels (from Phase 2 or from domain knowledge)
 
 | Macro | Where | What it does |
 |-------|-------|--------------|
-| `WSS_INIT()` | Once, after `MPI_Init()` | Identifies rank 0, initialises PAPI, prints startup message |
-| `WSS_BEGIN()` | Before each kernel call | Clears `/proc/self/clear_refs`, starts PAPI counters |
+| `WSS_INIT()` | Once, after `MPI_Init()` | Identifies rank 0, initialises PAPI (and perf fallback if needed), prints startup message |
+| `WSS_BEGIN()` | Before each kernel call | Clears `/proc/self/clear_refs`, starts counters |
 | `WSS_END("name")` | After each kernel call | Stops counters, reads `/proc/self/smaps`, prints report line |
 
 When built without `-DPROFILE_WSS`, all macros are empty — zero overhead, no compilation changes needed.
@@ -376,15 +376,18 @@ ships a static library (`libwss_profiler.a`) and Fortran module file
    ```
    -lwss_profiler -lpapi
    ```
-   The library and module are in standard system paths (`/usr/local/lib`
-   and `/usr/local/include`) so no `-L` or `-I` flags are needed.
+   The library is at `/usr/local/lib` (no `-L` flag needed). The module
+   file (`wss_profiler_mod.mod`) is at `/usr/local/include` — pass
+   `-I/usr/local/include` so `mpif90` can find it (Fortran compilers do
+   NOT search system include paths for `.mod` files by default).
 
    Adapt to the project's build system. For example with a Makefile:
    ```
-   LDFLAGS += -lwss_profiler -lpapi
+   OPTIONS  += -I/usr/local/include
+   LDFLAGS  += -lwss_profiler -lpapi
    ```
 
-4. **Rebuild** with the profiler linked:
+3. **Rebuild** with the profiler linked:
    ```
    make EXTRA_CFLAGS="-DPROFILE_WSS" EXTRA_LDFLAGS="-lwss_profiler -lpapi"
    ```
@@ -394,17 +397,17 @@ ships a static library (`libwss_profiler.a`) and Fortran module file
    ```
    Adapt the make invocation to the user's actual build system (CMake, manual gcc invocation, etc.).
 
-5. **Run normally** (same command as always):
+4. **Run normally** (same command as always):
    ```bash
    mpirun -np <N> ./solver test/small.cfg
    ```
 
-6. **Capture stderr from rank 0**. The report lines go to stderr. Redirect or tee to capture:
+5. **Capture stderr from rank 0**. The report lines go to stderr. Redirect or tee to capture:
    ```bash
    mpirun -np <N> ./solver test/small.cfg 2>&1 | grep '\[WSS\]'
    ```
 
-7. **Report results** to the user (see format below).
+6. **Report results** to the user (see format below).
 
 ### Output format
 

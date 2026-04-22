@@ -7,7 +7,7 @@
 !>   call some_kernel(...)
 !>   call wss_end_named("kernel_name")
 !>
-!> Link with wss_profiler_f.o (compiled from wss_profiler_f.c with -DPROFILE_WSS).
+!> Link with: -lwss_profiler -lpapi
 module wss_profiler_mod
   use iso_c_binding
   implicit none

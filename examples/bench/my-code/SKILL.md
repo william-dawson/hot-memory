@@ -47,6 +47,8 @@ This is a C project built with `mpicc` via a simple Makefile.
 - **To add a header include path**: `make CFLAGS+="-I/path/to/headers" bench`
 - **To include a new C header**: add `#include "header.h"` to `bench.c`; if it's
   on a system path (`/usr/local/include`) no `-I` flag is needed.
+- **To build with profiling**: use `make profile` — sets `-DPROFILE_WSS` and
+  links `-lwss_profiler -lpapi` automatically. The bench is already instrumented.
 
 The Makefile variables `CFLAGS` and `LDFLAGS` accept appended values.
 

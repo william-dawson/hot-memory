@@ -84,12 +84,14 @@ Inside the container, verify the toolchain:
 ```bash
 claude --version
 perf stat echo ok
-cd /workspace && make profile && mpirun -np 2 ./bench 2>&1 | grep '\[WSS\]'
+cd /workspace && make profile && mpirun -np 4 ./bench 2>&1 | grep '\[WSS\]'
 ```
 
-Expected WSS output (sanity check values with -np 4):
-- `stream_kernel` → ~768 MB hot, near-zero FLOP/byte
-- `compute_kernel` → ~2 MB hot (FLOP/byte depends on PAPI availability)
+Expected WSS output (sanity check values with `-np 4`):
+- `stream_kernel` → ~96 MB hot, near-zero FLOP/byte  (3 arrays × 32 MB/rank)
+- `compute_kernel` → ~32 MB hot, high FLOP/byte       (4M doubles, 100 multiply-add iters)
+
+FLOP counts depend on PAPI availability and whether the perf fallback activates (see Platform constraints).
 
 **Publishing a release:**
 ```bash
@@ -112,19 +114,22 @@ CI (`singularity.yml`) builds and attaches `hotmemory.sif` automatically. On ord
 
 ## The wss_profiler library
 
-Located in `wss_profiler/`. Three files:
+Located in `wss_profiler/`. Four files:
 
 | File | Language | Purpose |
 |------|----------|---------|
-| `wss_profiler.h` | C | Macros: `WSS_INIT()`, `WSS_BEGIN()`, `WSS_END("name")` |
+| `wss_profiler.h` | C | Macros: `WSS_INIT()`, `WSS_BEGIN()`, `WSS_END("name")` + extern declarations |
+| `wss_profiler.c` | C | Global variable definitions (compiled into `libwss_profiler.a`) |
 | `wss_profiler_f.c` | C | Fortran-callable wrappers (handles string length, trailing spaces) |
 | `wss_profiler_mod.f90` | Fortran | Module: `wss_init()`, `wss_begin()`, `wss_end_named("name")` |
 
-All compile to nothing without `-DPROFILE_WSS`. Build flags for profiling: `-DPROFILE_WSS -lpapi`. All files are installed at `/usr/local/include` inside the container.
+All compile to nothing without `-DPROFILE_WSS`. Build flags for profiling: `-DPROFILE_WSS -lwss_profiler -lpapi`. All files are installed at `/usr/local/include`; the pre-compiled library is at `/usr/local/lib/libwss_profiler.a`.
 
-The header has a PAPI fallback chain: `PAPI_DP_OPS` + `PAPI_SP_OPS` → `PAPI_FP_OPS` → FLOPs reported as 0 with a message. Always check stderr for `[WSS]` init messages when results look wrong.
+**Why `wss_profiler.c` exists:** the globals (`_wss_rank`, `_wss_eventset`, etc.) are declared `extern` in the header so every translation unit that includes it shares one copy. Without this, `WSS_INIT()` in `main.cc` would set its own copy of `_wss_rank` while `WSS_BEGIN()` in other files would read their own uninitialized copies and silently skip all measurements.
 
-**PAPI only counts the main thread.** OpenMP worker thread FLOPs are NOT counted. The hot-byte measurement (smaps) IS process-wide and includes all threads. For OpenMP codes, rely on hot bytes and treat FLOP counts as lower bounds.
+**FP counting fallback:** On aarch64 machines where PAPI's `perf_event` component cannot initialize (e.g. libpfm4 doesn't know the CPU), `WSS_INIT()` falls back to `perf_event_open` with raw ARM PMU event `0x74` (`FP_FIXED_OPS_SPEC`). Override at build time with `-DWSS_PERF_FP_EVENT=0xNN`. The agent discovers the right code during Phase 0 by probing `perf stat -e armv8_pmuv3_0/event=0xNN/`.
+
+**Hardware counters only count the main thread.** OpenMP worker thread FLOPs are NOT counted. The hot-byte measurement (smaps) IS process-wide and includes all threads. For OpenMP codes, rely on hot bytes and treat FLOP counts as lower bounds.
 
 ---
 
@@ -150,11 +155,13 @@ From: hotmemory.sif
 
 The most common contribution is improving `skills/wss-profiler/SKILL.md`. Key things it must contain for Claude to work correctly:
 
-- The Phase 1 perf command verbatim (including the rank-0 filtering pattern)
-- The Phase 2 step-by-step for both C and Fortran codes
+- The prerequisite baseline build/run check
+- The Phase 0 capability check (PAPI, perf, perf fallback probe procedure)
+- The Phase 2 perf command verbatim (including the rank-0 filtering pattern)
+- The Phase 3 step-by-step for both C and Fortran codes, with correct link flags
 - The FLOP/byte interpretation thresholds (<1 memory-bound, 1–5 borderline, >10 compute-bound)
 - The GPU memory planning reasoning (max hot set, not total allocation)
-- The caveats (4 KB granularity, main-thread PAPI only, smaps noise)
+- The caveats (4 KB granularity, main-thread counters only, smaps noise)
 - The troubleshooting table
 
 The skill file is the authoritative, actionable description of the methodology. `wss-profiler/SKILL.md` is the source of truth for how profiling works.
