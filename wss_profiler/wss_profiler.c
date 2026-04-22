@@ -19,5 +19,6 @@ int _wss_nmem_events = 0;
 int _wss_nevents     = 0;
 int _wss_papi_ok     = 0;
 int _wss_active      = 0;
+int _wss_fp_fd       = -1;         /* perf_event_open fd for FP fallback */
 
 #endif

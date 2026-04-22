@@ -3,7 +3,7 @@
  *                  traffic profiler.
  *
  * Usage:
- *   1. #include "wss_profiler.h" in the file containing main().
+ *   1. #include "wss_profiler.h" in any file where you call WSS_* macros.
  *   2. Call WSS_INIT() once after MPI_Init().
  *   3. Wrap each kernel call with WSS_BEGIN() / WSS_END("kernel_name").
  *   4. Build with: -DPROFILE_WSS -lwss_profiler -lpapi
@@ -17,11 +17,18 @@
  *   "MB accessed" and "FLOP/byte-accessed" are only reported when PAPI
  *   load/store counters are available. Otherwise they show as 0.
  *
+ * FP counting:
+ *   PAPI is tried first. On aarch64 machines where PAPI's perf_event
+ *   component cannot initialize (e.g. libpfm4 doesn't know the CPU),
+ *   the profiler falls back to perf_event_open with raw ARM PMU event
+ *   0x74 (FP_FIXED_OPS_SPEC). This covers fixed-width FP ops (scalar +
+ *   NEON/ASIMD). SVE variable-width FP ops (event 0x75) are NOT counted
+ *   as their element count depends on vector length.
+ *
  * Requirements:
  *   - Linux amd64 or aarch64 (uses /proc/self/clear_refs and /proc/self/smaps)
- *   - PAPI (libpapi-dev) — on ARM/Neoverse V2 run `papi_avail` to check which
- *     FP events are exposed; the header falls back automatically if PAPI_DP_OPS
- *     or PAPI_SP_OPS are unavailable.
+ *   - PAPI (libpapi-dev) for FP and load/store counting (optional: degrades
+ *     gracefully; on aarch64 FP falls back to perf_event_open)
  *   - MPI (for rank filtering; works with or without OpenMP)
  *   - CAP_SYS_RESOURCE or root to write clear_refs (run container --privileged
  *     or --fakeroot)
@@ -36,6 +43,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <sys/syscall.h>
+#include <linux/perf_event.h>
 #include <mpi.h>
 #include <papi.h>
 
@@ -47,11 +58,12 @@
  */
 extern int    _wss_rank;
 extern int    _wss_eventset;
-extern int    _wss_nfp_events;   /* how many FP counters are live */
-extern int    _wss_nmem_events;  /* how many load/store counters are live */
-extern int    _wss_nevents;      /* total counters: FP + mem */
-extern int    _wss_papi_ok;      /* PAPI library initialized */
-extern int    _wss_active;       /* 1 between WSS_BEGIN and WSS_END */
+extern int    _wss_nfp_events;    /* how many PAPI FP counters are live */
+extern int    _wss_nmem_events;   /* how many PAPI load/store counters are live */
+extern int    _wss_nevents;       /* total PAPI counters: FP + mem */
+extern int    _wss_papi_ok;       /* PAPI library initialized */
+extern int    _wss_active;        /* 1 between WSS_BEGIN and WSS_END */
+extern int    _wss_fp_fd;         /* perf_event_open fd for FP fallback (-1 = unused) */
 
 /* ── internal helpers (defined inline to avoid duplicate-symbol errors) ─── */
 
@@ -82,7 +94,7 @@ static inline void _wss_papi_init(void)
                     "[WSS] Using PAPI_FP_OPS (DP_OPS/SP_OPS unavailable)\n");
         } else {
             fprintf(stderr,
-                    "[WSS] No FP PAPI events available — FLOPs will be 0\n");
+                    "[WSS] PAPI: no FP events available\n");
         }
     } else {
         _wss_nfp_events = has_dp + has_sp;
@@ -104,6 +116,45 @@ static inline void _wss_papi_init(void)
         PAPI_destroy_eventset(&_wss_eventset);
         _wss_eventset = PAPI_NULL;
     }
+}
+
+/*
+ * _wss_perf_fp_init() — open a perf_event_open fd for FP counting.
+ *
+ * Called after _wss_papi_init(). Only activates when PAPI provided no FP
+ * events (_wss_nfp_events == 0). On non-aarch64 this is a no-op — those
+ * platforms should have working PAPI FP events.
+ *
+ * Event 0x74 = FP_FIXED_OPS_SPEC: fixed-width FP ops speculatively executed
+ * (scalar + NEON/ASIMD). Defined in the ARM PMU v3 architecture spec and
+ * available on chips where libpfm4 may not yet have a PMU entry.
+ */
+static inline void _wss_perf_fp_init(void)
+{
+#ifdef __aarch64__
+    if (_wss_nfp_events > 0)
+        return;  /* PAPI already has FP covered */
+
+    struct perf_event_attr pe = {0};
+    pe.size           = sizeof(struct perf_event_attr);
+    pe.type           = PERF_TYPE_RAW;
+    pe.config         = 0x74;  /* FP_FIXED_OPS_SPEC */
+    pe.disabled       = 1;
+    pe.exclude_kernel = 1;
+    pe.exclude_hv     = 1;
+    pe.inherit        = 0;
+
+    _wss_fp_fd = (int)syscall(__NR_perf_event_open, &pe,
+                               0 /*pid: self*/, -1 /*cpu: any*/,
+                               -1 /*group*/, 0 /*flags*/);
+    if (_wss_fp_fd < 0) {
+        fprintf(stderr, "[WSS] perf_event_open(FP_FIXED_OPS_SPEC) failed: %m"
+                        " — FLOPs will be 0\n");
+    } else {
+        fprintf(stderr, "[WSS] Using perf_event_open for FP counting"
+                        " (aarch64 fallback, event 0x74)\n");
+    }
+#endif
 }
 
 static inline void _wss_clear_refs(void)
@@ -142,20 +193,22 @@ static inline long long _wss_read_referenced_kb(void)
 
 /*
  * WSS_INIT() — call once after MPI_Init().
- * Identifies rank 0, initialises PAPI, prints a startup message.
+ * Identifies rank 0, initialises PAPI (and perf fallback if needed),
+ * prints a startup message.
  */
 #define WSS_INIT() \
     do { \
         MPI_Comm_rank(MPI_COMM_WORLD, &_wss_rank); \
         if (_wss_rank == 0) { \
             _wss_papi_init(); \
+            _wss_perf_fp_init(); \
             fprintf(stderr, "[WSS] Profiling active on rank 0\n"); \
         } \
     } while (0)
 
 /*
  * WSS_BEGIN() — place immediately before the kernel call.
- * Clears the Referenced bits and starts PAPI counters.
+ * Clears the Referenced bits and starts counters (PAPI and/or perf).
  */
 #define WSS_BEGIN() \
     do { \
@@ -171,6 +224,10 @@ static inline long long _wss_read_referenced_kb(void)
                 _wss_clear_refs(); \
                 if (_wss_eventset != PAPI_NULL) \
                     PAPI_start(_wss_eventset); \
+                if (_wss_fp_fd >= 0) { \
+                    ioctl(_wss_fp_fd, PERF_EVENT_IOC_RESET, 0); \
+                    ioctl(_wss_fp_fd, PERF_EVENT_IOC_ENABLE, 0); \
+                } \
             } \
         } \
     } while (0)
@@ -197,8 +254,13 @@ static inline long long _wss_read_referenced_kb(void)
             long long _wss_vals[8] = {0}; \
             if (_wss_eventset != PAPI_NULL) \
                 PAPI_stop(_wss_eventset, _wss_vals); \
+            long long _wss_perf_fp = 0; \
+            if (_wss_fp_fd >= 0) { \
+                ioctl(_wss_fp_fd, PERF_EVENT_IOC_DISABLE, 0); \
+                read(_wss_fp_fd, &_wss_perf_fp, sizeof(long long)); \
+            } \
             long long _wss_ref_kb  = _wss_read_referenced_kb(); \
-            long long _wss_flops   = 0; \
+            long long _wss_flops   = _wss_perf_fp; \
             for (int _i = 0; _i < _wss_nfp_events; _i++) \
                 _wss_flops += _wss_vals[_i]; \
             long long _wss_memops  = 0; \
