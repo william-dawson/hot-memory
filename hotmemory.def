@@ -33,6 +33,17 @@ From: ubuntu:24.04
     && ln -sf "$PERF_BIN" /usr/local/bin/perf \
     && rm -rf /var/lib/apt/lists/*
 
+    # Build libpfm4 from source — the apt version lags new PMU support (e.g.
+    # ARM Grace/Neoverse). Building from HEAD compiles in all known PMUs on
+    # any architecture with no architecture-specific configuration.
+    # Install to /usr (same prefix as apt) so PAPI picks it up at runtime
+    # without needing LD_LIBRARY_PATH.
+    git clone --depth=1 https://git.code.sf.net/p/perfmon2/libpfm4 /tmp/libpfm4
+    make -C /tmp/libpfm4 -j$(nproc) PREFIX=/usr
+    make -C /tmp/libpfm4 install PREFIX=/usr
+    ldconfig
+    rm -rf /tmp/libpfm4
+
     # Node.js + Claude Code installed to a fixed system path
     curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
     apt-get install -y nodejs
