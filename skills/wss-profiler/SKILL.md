@@ -29,6 +29,46 @@ Given your MPI code, it answers:
 
 ---
 
+## Interaction protocol
+
+This workflow must be **interactive**. Do not silently run through all phases.
+
+Before each major step:
+- explain **what you are about to do**
+- explain **why that step matters**
+- list **what steps will remain afterwards**
+- ask for permission before proceeding
+
+After each completed step:
+- briefly report what you found
+- explain how that affects the plan
+- ask for permission for the next major step
+
+Use this cadence for:
+- baseline build and run
+- capability check
+- baseline peak-memory measurement
+- perf hotspot profiling
+- source instrumentation
+- profiled rebuild
+- profiled execution
+
+For source edits, be explicit about which files you plan to modify and which
+functions or call sites you plan to instrument before asking permission.
+
+Example phrasing:
+```text
+Next I want to run the capability check. This will tell us whether this
+machine can measure hot bytes, perf samples, and FLOPs. After that, the
+remaining steps would be baseline peak-memory measurement, hotspot discovery,
+instrumentation, rebuild, and the profiled run. Do you want me to proceed?
+```
+
+Do not ask permission for every shell command inside a step. Ask once per
+major step, then complete that step fully.
+
+---
+
 ## General rule: log everything
 
 Always redirect profiling output to files so the user can review it later.
@@ -56,6 +96,11 @@ until the baseline build and run are confirmed working.
 If the code normally uses OpenMP, disable it before proceeding. Do not try
 to interpret mixed MPI+OpenMP runs.
 
+Before doing this prerequisite step, explain that you are validating the
+unmodified baseline first, state that the remaining steps are capability
+check, baseline memory, hotspot discovery, instrumentation, rebuild, and
+profiled execution, and ask permission.
+
 ---
 
 ## Workflow
@@ -64,6 +109,11 @@ to interpret mixed MPI+OpenMP runs.
 
 Call `wss_capability_check` (optionally with `extra_codes` for additional
 PMU event codes to probe). **Always run first.**
+
+Before running it, tell the user you are checking machine capabilities.
+State that the remaining steps after this are baseline memory measurement,
+hotspot discovery, instrumentation, rebuild, and profiled execution. Ask
+permission before proceeding.
 
 What to do with the result:
 - Read `summary.unavailable` and report each item to the user before proceeding.
@@ -87,6 +137,11 @@ Capability check:
 Call `wss_measure_baseline` with `binary_command` (and `mpirun_prefix` for
 MPI codes, e.g. `"mpirun -np 4"`).
 
+Before running it, tell the user you are measuring peak RSS as an upper bound
+for later hot-set comparisons. State that the remaining steps after this are
+hotspot discovery, instrumentation, rebuild, and profiled execution. Ask
+permission before proceeding.
+
 - Record `peak_rss_mb`. This is the upper bound for all hot-set comparisons.
 - Report to user: "Peak memory for rank 0: X MB. Per-kernel hot sets will be
   fractions of this."
@@ -94,6 +149,11 @@ MPI codes, e.g. `"mpirun -np 4"`).
 ### Step 2: `wss_perf_profile` — identify which kernels to instrument
 
 Call `wss_perf_profile` with the same `mpirun_prefix` and `binary_command`.
+
+Before running it, tell the user you are sampling the code to decide which
+functions are worth instrumenting. State that the remaining steps after this
+are instrumentation, rebuild, and profiled execution. Ask permission before
+proceeding.
 
 - Read `raw_report`. Identify the top functions by sample %. Note which are
   in user code vs. MPI/library code.
@@ -108,6 +168,25 @@ Call `wss_perf_profile` with the same `mpirun_prefix` and `binary_command`.
 
 This step requires agent judgment. The MCP tool runs the binary; **you** decide
 how and where to instrument it.
+
+Treat this as three separate permission gates:
+
+1. **Instrumentation plan approval**
+   - Explain which files you plan to edit.
+   - Explain which functions or call sites you plan to wrap with `WSS_BEGIN()` / `WSS_END()`.
+   - Explain why that granularity is appropriate.
+   - State that the remaining steps after instrumentation are rebuild and profiled execution.
+   - Ask permission before editing files.
+
+2. **Rebuild approval**
+   - Explain that you will rebuild with `-DPROFILE_WSS -lwss_profiler -lpapi`.
+   - State that the only remaining step after rebuild is the profiled execution.
+   - Ask permission before rebuilding.
+
+3. **Profiled run approval**
+   - Explain exactly which profiled binary command you will run.
+   - State that the remaining work after the run is result interpretation and GPU-memory planning.
+   - Ask permission before running it.
 
 1. **Add instrumentation** (see "Instrumentation strategy" below).
 2. **Rebuild** with `-DPROFILE_WSS` and link `-lwss_profiler -lpapi`.
