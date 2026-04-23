@@ -8,7 +8,7 @@ A deliverable template for an HPC performance-modeling engagement. It ships a Si
 - **Claude Code** (pre-configured with skills as slash commands)
 - **Skill files** — the key abstraction: markdown documents that teach Claude how to do a task or how to work with a specific codebase
 
-The end-user clones this repo, builds the SIF, mounts their own code + a filled-in code skill, and then types `claude` inside the container. Claude reads both skills and runs a two-phase profiling workflow to answer: *"Where is time going?"* and *"How much GPU memory does each hot kernel actually need?"*
+The end-user clones this repo, builds the SIF, mounts their own code + a filled-in code skill, and then types `claude` inside the container. Claude reads both skills and runs a two-phase profiling workflow to answer: *"Where is time going?"* and *"How much GPU memory does each hot kernel actually need?"* The analysis model is MPI-only: OpenMP must be disabled or ignored.
 
 ---
 
@@ -129,7 +129,7 @@ All compile to nothing without `-DPROFILE_WSS`. Build flags for profiling: `-DPR
 
 **FP counting fallback:** On aarch64 machines where PAPI's `perf_event` component cannot initialize (e.g. libpfm4 doesn't know the CPU), `WSS_INIT()` falls back to `perf_event_open` with raw ARM PMU event `0x74` (`FP_FIXED_OPS_SPEC`). Override at build time with `-DWSS_PERF_FP_EVENT=0xNN`. The agent discovers the right code during Phase 0 by probing `perf stat -e armv8_pmuv3_0/event=0xNN/`.
 
-**Hardware counters only count the main thread.** OpenMP worker thread FLOPs are NOT counted. The hot-byte measurement (smaps) IS process-wide and includes all threads. For OpenMP codes, rely on hot bytes and treat FLOP counts as lower bounds.
+**Ignore OpenMP for analysis.** Hardware counters only count the main thread, so OpenMP worker-thread FLOPs are NOT counted. Although the hot-byte measurement (smaps) is process-wide, mixed MPI+OpenMP runs do not produce a consistent metric set. Build with OpenMP disabled or run with `OMP_NUM_THREADS=1` and interpret results as MPI-only.
 
 ---
 
@@ -171,7 +171,7 @@ The skill file is the authoritative, actionable description of the methodology. 
 ## Key gotchas
 
 - **WSS measures rank 0 only.** The profiler assumes roughly symmetric workload across ranks. For load-imbalanced codes, the measurements may undercount the busiest rank.
-- **PAPI only counts the main thread.** OpenMP worker threads are not instrumented. FLOP counts will be low for heavily-threaded kernels. Hot-byte measurement is process-wide and accurate.
+- **Ignore OpenMP for analysis.** PAPI only counts the main thread. Build with OpenMP disabled or run with `OMP_NUM_THREADS=1`; do not interpret mixed-thread measurements as representative.
 - **smaps noise floor is a few MB.** For kernels with small working sets (<10 MB), the hot-byte count includes stack, code segment, and library pages. Interpret with caution; for large kernels it's negligible.
 
 ---

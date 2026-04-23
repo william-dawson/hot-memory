@@ -3,7 +3,7 @@
 > [!NOTE]
 This repository is a model of what an outsourced AI-agent deliverable should look like. The idea: when you hire someone to build a tool, they should ship it in a container that drops you straight into a vibe coding environment. Everything you need — the tool, its dependencies, and the skill files that teach your AI agent how to use it — is right there. You type `claude` and start working.
 
-The specific tool here is an HPC performance profiler. Given an MPI/OpenMP C/C++/Fortran code, it answers one key research question: for the key kernels ina  program, how many unique bytes are **hot**.
+The specific tool here is an HPC performance profiler. Given an MPI C/C++/Fortran code, it answers one key research question: for the key kernels in a program, how many unique bytes are **hot**.
 
 The motivation is GPU memory planning. Before porting a code to a small-memory GPU (like a consumer RTX), you need to know not just total allocation but the *hot working set* of each kernel. Total allocation is always a pessimistic overestimate — no single kernel touches all of it. The hot set tells you what actually needs to fit on the device, what can stay resident between kernels, and what must be swapped.
 
@@ -54,9 +54,17 @@ For the full workflow, ask your sysadmin to set on the compute nodes:
 sysctl kernel.perf_event_paranoid=0
 ```
 
-### OpenMP limitation
+### OpenMP policy
 
-PAPI hardware counters (FLOPs, load/store counts) only instrument the **main thread**. OpenMP worker thread activity is not counted. The hot-byte measurement (`/proc/self/smaps`) *is* process-wide and includes all threads — so hot MB is accurate for OpenMP codes, but FLOP counts and total bytes accessed will be undercounted. For OpenMP codes, treat FLOP-derived metrics as lower bounds and rely primarily on hot bytes for GPU memory planning.
+This workflow must be treated as **MPI-only analysis**. Inside the container,
+`OMP_NUM_THREADS=1` is set and the agent should ignore OpenMP when building,
+running, and interpreting results.
+
+The reason is simple: PAPI hardware counters only instrument the **main
+thread**, so OpenMP worker-thread FLOPs and memory traffic are not measured.
+Although the hot-byte measurement (`/proc/self/smaps`) is process-wide, mixed
+MPI+OpenMP runs do not produce a consistent metric set. If your code normally
+uses OpenMP, disable it for profiling and analyse the MPI decomposition only.
 
 ---
 

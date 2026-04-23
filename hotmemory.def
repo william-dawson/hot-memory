@@ -158,4 +158,4 @@ SETTINGS
 
 %labels
     Maintainer wddawson
-    Description WSS profiler + Claude Code for HPC MPI/OpenMP codes
+    Description WSS profiler + Claude Code for HPC MPI codes; OpenMP disabled for analysis

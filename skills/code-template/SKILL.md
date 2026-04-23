@@ -13,7 +13,8 @@ Remove these instructions when you're done.
 
 One or two sentences: what the code does, its domain, scale.
 Example: "A 3-D finite-difference CFD solver for incompressible flow.
-Runs 500 timesteps on a 256³ grid. Single-node, 4 MPI ranks, OpenMP within each rank."
+Runs 500 timesteps on a 256³ grid. Single-node, 4 MPI ranks. For profiling,
+OpenMP is disabled and analysis is MPI-only."
 
 TODO
 

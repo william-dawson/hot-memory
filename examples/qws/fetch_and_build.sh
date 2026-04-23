@@ -13,7 +13,7 @@ git clone --depth 1 https://github.com/RIKEN-LQCD/qws.git "$DEST"
 
 echo "Building QWS..."
 cd "$DEST"
-make -j "$(grep -c processor /proc/cpuinfo)" fugaku_benchmark= omp=1 compiler=openmpi-gnu arch=thunderx2 rdma= mpi=1 powerapi=
+make -j "$(grep -c processor /proc/cpuinfo)" fugaku_benchmark= omp=0 compiler=openmpi-gnu arch=thunderx2 rdma= mpi=1 powerapi=
 
 echo ""
 echo "QWS built successfully at $DEST"

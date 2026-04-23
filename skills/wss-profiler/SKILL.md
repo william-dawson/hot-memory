@@ -9,6 +9,10 @@ Welcome! This container is an HPC profiling tool. It measures the **hot
 working set** of each kernel in your code — the actual bytes touched, not
 just total allocation. This is the key input for GPU memory planning.
 
+**Critical policy:** perform this analysis as **MPI-only**. Ignore OpenMP.
+If the target code has OpenMP support, disable it for the profiled run or
+force `OMP_NUM_THREADS=1` and interpret the results as MPI-only.
+
 ## What this tool does
 
 Given your MPI code, it answers:
@@ -48,6 +52,9 @@ inspect it for warnings, timing data, or unexpected output.
 Before profiling anything, read the `/my-code` skill, build the code, and
 run it. Verify it exits cleanly with the expected output. Do not proceed
 until the baseline build and run are confirmed working.
+
+If the code normally uses OpenMP, disable it before proceeding. Do not try
+to interpret mixed MPI+OpenMP runs.
 
 ---
 
@@ -183,12 +190,17 @@ Use `use wss_profiler_mod` and call `wss_init()`, `wss_begin()`,
 `-I/usr/local/include` so mpif90 finds `wss_profiler_mod.mod` (Fortran
 compilers do NOT search system include paths for `.mod` files by default).
 
-### OpenMP note
+### OpenMP policy
 
-Hardware counters (PAPI and the perf fallback) only instrument the main thread.
-OpenMP worker thread FLOPs are NOT counted. The hot-byte measurement (smaps)
-IS process-wide. For OpenMP codes: hot MB is accurate for GPU planning; FLOP
-counts and derived ratios are lower bounds only. Always state this.
+Do not analyse OpenMP execution with this workflow. Hardware counters (PAPI
+and the perf fallback) only instrument the main thread, while the hot-byte
+measurement (smaps) is process-wide. That mismatch makes mixed MPI+OpenMP
+runs hard to interpret consistently.
+
+If a codebase supports OpenMP:
+- build with OpenMP disabled when practical
+- otherwise run with `OMP_NUM_THREADS=1`
+- describe the run and the results as MPI-only
 
 ---
 
@@ -229,7 +241,7 @@ Show unavailable counter columns as "n/a" rather than 0. Hot MB and % of Peak al
 
 **Caveats to always state:**
 - Hot bytes are at 4 KB page granularity (rounded up). Small working sets have significant rounding error.
-- PAPI only counts the main thread. For OpenMP codes, treat FLOP counts as lower bounds.
+- Ignore OpenMP for analysis. Build with OpenMP disabled or run with `OMP_NUM_THREADS=1`.
 - smaps includes stack, code, and library pages (~a few MB of noise). Negligible for large working sets.
 
 ---

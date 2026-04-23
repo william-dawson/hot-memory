@@ -1,5 +1,5 @@
 /*
- * example/bench.c — Synthetic MPI+OpenMP benchmark for wss_profiler.h.
+ * example/bench.c — Synthetic MPI benchmark for wss_profiler.h.
  *
  * Two kernels at opposite ends of the memory-vs-compute spectrum:
  *   - stream_kernel: touches a large array with minimal compute
@@ -129,9 +129,9 @@ int main(int argc, char **argv)
      * while peak allocation is ~128 MB. This demonstrates that
      * individual kernels use less memory than total allocation.
      *
-     * Note: FLOP counts depend on PAPI availability and OpenMP thread
-     * counting (main thread only). Hot MB includes 4 KB page rounding
-     * plus a few MB of smaps noise (stack, libs).
+     * Note: profile this as MPI-only. The container forces OMP_NUM_THREADS=1,
+     * and hardware counters only measure the main thread. Hot MB includes
+     * 4 KB page rounding plus a few MB of smaps noise (stack, libs).
      */
 
     if (rank == 0) {

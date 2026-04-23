@@ -37,7 +37,9 @@
  *   - Linux amd64 or aarch64 (uses /proc/self/clear_refs and /proc/self/smaps)
  *   - PAPI (libpapi-dev) for FP and load/store counting (optional: degrades
  *     gracefully; perf_event_open fallback used when PAPI FP unavailable)
- *   - MPI (for rank filtering; works with or without OpenMP)
+ *   - MPI (for rank filtering)
+ *   - OpenMP should be disabled or ignored for analysis; counters only
+ *     measure the main thread
  *   - CAP_SYS_RESOURCE or root to write clear_refs (run container --privileged
  *     or --fakeroot)
  */

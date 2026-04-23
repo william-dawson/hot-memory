@@ -9,7 +9,8 @@ description: Build/run/profile QWS (lattice QCD) in /workspace. TRIGGER when: us
 QWS (QCD Wide SIMD) is a lattice quantum chromodynamics simulation library.
 It implements Wilson-clover fermion solvers (BiCGStab, CG) with domain
 decomposition preconditioning, optimised for wide SIMD architectures.
-C/C++ with MPI and OpenMP.
+C/C++ with MPI support. For profiling in this container, ignore OpenMP and
+run MPI-only.
 
 From https://github.com/RIKEN-LQCD/qws.
 
@@ -43,11 +44,11 @@ From https://github.com/RIKEN-LQCD/qws.
 ## Build command
 
 The Makefile uses variables to select compiler, architecture, and features.
-For a standard MPI+OpenMP build with GNU compilers:
+For profiling in this container, use an MPI-only build with GNU compilers:
 
 ```bash
 cd /workspace/qws
-make -j $(nproc) fugaku_benchmark= omp=1 compiler=openmpi-gnu arch=thunderx2 rdma= mpi=1 powerapi=
+make fugaku_benchmark= omp=0 compiler=openmpi-gnu arch=thunderx2 rdma= mpi=1 powerapi=
 ```
 
 The `arch=` setting controls SIMD vector lengths (`vlend`, `vlens`). Inspect
@@ -124,7 +125,8 @@ architectures are acceptable.
 
 ## Notes for the profiler
 
-- **This is a C/C++ code** using MPI and OpenMP.
+- **Profile this code as MPI-only.** QWS has OpenMP support, but inside this
+  container you should disable it and ignore OpenMP when analysing results.
 - The main computational kernels are the Dirac operator applications
   (`deo_*`, `ddd_*`) and the clover term (`clover_s`). These are called
   many times per solver iteration inside the BiCGStab loop.

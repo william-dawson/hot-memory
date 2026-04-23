@@ -71,7 +71,8 @@ value depends on the number of ranks.
 
 ## Notes for the profiler
 
-- **This is a C code** using MPI and OpenMP.
+- **Profile this code as MPI-only.** The source has OpenMP pragmas, but the
+  container forces `OMP_NUM_THREADS=1` and the analysis should ignore OpenMP.
 - Both kernels are called once per run (no time-stepping loop).
 - `stream_kernel` touches three large arrays — memory-bandwidth-bound.
   Memory footprint per rank scales with rank count (strong scaling).
