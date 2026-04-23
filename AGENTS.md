@@ -194,7 +194,9 @@ Additionally, `--fakeroot` makes the user appear as root, so OpenMPI requires `O
 
 **Installation approach**: Claude Code is installed via `npm install -g @anthropic-ai/claude-code` into `/usr/bin/claude`, not via the official install script. The install script tries to symlink into `$HOME/.local/share/claude/`, which during `--fakeroot` builds resolves to the host user's home on the host filesystem — the binary ends up outside the SIF and is inaccessible at runtime.
 
-**HOME isolation**: `/etc/bash.bashrc` sets `HOME=/tmp/claude-home` and `PATH` to system paths only. This prevents Claude from picking up the host user's broken symlinks, stale `~/.claude/settings.json`, or interfering dotfiles. The bashrc then populates `/tmp/claude-home/.claude/commands/` with the baked-in skills.
+**HOME isolation**: `/etc/bash.bashrc` sets `HOME=/tmp/claude-home` and `PATH` to system paths only. This prevents Claude from picking up the host user's broken symlinks or interfering dotfiles. The bashrc then populates `/tmp/claude-home/.claude/commands/` with the baked-in skills.
+
+**MCP registration**: The container seeds a project-scoped `/workspace/.mcp.json` pointing at `/usr/local/lib/wss-mcp/server.js` if the mounted workspace is writable and no `.mcp.json` already exists. This avoids depending on per-user Claude settings inside the container and makes the MCP config visible in the project root.
 
 **Why not `--no-home`?** Using `--no-home` flag causes Claude Code to hang on startup — likely a pseudo-terminal issue inside the Singularity sandbox. Setting `HOME=/tmp/claude-home` in `/etc/bash.bashrc` is cleaner and avoids this.
 

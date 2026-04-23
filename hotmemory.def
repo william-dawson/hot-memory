@@ -82,9 +82,11 @@ if [ -f /skills/my-code/SKILL.md ]; then
     cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
 fi
 
-# Register WSS profiler MCP server in Claude Code settings
-mkdir -p "$HOME/.claude"
-cat > "$HOME/.claude/settings.json" << 'SETTINGS'
+# Seed project-scoped MCP config for Claude Code. Do not overwrite a user
+# provided .mcp.json; only create the file when the mounted workspace is
+# writable and no project config exists yet.
+if [ -d /workspace ] && [ -w /workspace ] && [ ! -e /workspace/.mcp.json ]; then
+cat > /workspace/.mcp.json << 'MCPJSON'
 {
   "mcpServers": {
     "wss-profiler": {
@@ -93,7 +95,8 @@ cat > "$HOME/.claude/settings.json" << 'SETTINGS'
     }
   }
 }
-SETTINGS
+MCPJSON
+fi
 
 # Generate environment skill with user-invocable: false so Claude
 # auto-loads it as background knowledge without user action.
@@ -140,9 +143,10 @@ BASHRC
         cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
     fi
 
-    # Register WSS profiler MCP server in Claude Code settings
-    mkdir -p "$HOME/.claude"
-    cat > "$HOME/.claude/settings.json" << 'SETTINGS'
+    # Seed project-scoped MCP config for Claude Code without overwriting a
+    # user-provided .mcp.json.
+    if [ -d /workspace ] && [ -w /workspace ] && [ ! -e /workspace/.mcp.json ]; then
+    cat > /workspace/.mcp.json << 'MCPJSON'
 {
   "mcpServers": {
     "wss-profiler": {
@@ -151,7 +155,8 @@ BASHRC
     }
   }
 }
-SETTINGS
+MCPJSON
+    fi
 
     cd /workspace
     exec "$@"
