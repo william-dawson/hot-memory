@@ -26,6 +26,42 @@ function sh(cmd, extraEnv = {}) {
   });
 }
 
+function parsePapiComponentStatus(output) {
+  if (!output || output.includes('command not found')) {
+    return {
+      component: 'not_found',
+      error: 'papi_component_avail not found in PATH',
+    };
+  }
+
+  const lines = output.split('\n');
+  const perfIdx = lines.findIndex((line) => /Name:\s+perf_event\b/.test(line));
+  if (perfIdx === -1) {
+    return {
+      component: 'not_found',
+      error: 'perf_event component not listed by papi_component_avail',
+    };
+  }
+
+  for (let i = perfIdx + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^Name:\s+/.test(line)) break;
+
+    const disabled = line.match(/Disabled:\s*(.*)/i);
+    if (disabled) {
+      return {
+        component: 'failed',
+        error: disabled[1].trim(),
+      };
+    }
+  }
+
+  return {
+    component: 'ok',
+    error: '',
+  };
+}
+
 // ── MPI rank-0 wrapper ─────────────────────────────────────────────────────────
 // Writes a wrapper script so quoting is not an issue, then invokes it.
 // If mpirunPrefix is empty, just runs rank0Prefix + binaryCommand directly.
@@ -176,21 +212,11 @@ async function wssCapabilityCheck(args) {
   const arch = archResult.stdout.trim();
 
   // 2. PAPI component check
-  let papiComponent = 'not_found';
-  let papiComponentError = '';
   const papiCompResult = await sh('papi_component_avail 2>&1');
-  if (papiCompResult.exitCode === 127 || papiCompResult.stdout.includes('command not found')) {
-    papiComponent = 'not_found';
-    papiComponentError = 'papi_component_avail not found in PATH';
-  } else {
-    const errorLine = papiCompResult.stdout.split('\n').find(l => l.includes('Error:'));
-    if (errorLine) {
-      papiComponent = 'failed';
-      papiComponentError = errorLine.trim();
-    } else {
-      papiComponent = 'ok';
-    }
-  }
+  const {
+    component: papiComponent,
+    error: papiComponentError,
+  } = parsePapiComponentStatus(papiCompResult.stdout);
 
   // 3. PAPI event availability (only if PAPI component ok)
   const papiFpEvents = [];
@@ -241,13 +267,28 @@ async function wssCapabilityCheck(args) {
   let fpProbeOutput = '';
   let fpEvents = [];
   if (papiFpEvents.length === 0) {
-    const probeCodes = extraCodes.join(' ');
-    const probeCmd = `wss_probe_fp_events ${probeCodes} 2>&1`;
-    const probeResult = await sh(probeCmd);
-    fpProbeOutput = probeResult.stdout + (probeResult.stderr || '');
+    let probeCodeSets = [];
+    if (extraCodes.length > 0) {
+      probeCodeSets = [extraCodes];
+    } else if (arch === 'aarch64') {
+      probeCodeSets = [[], ['0x74', '0x75']];
+    } else {
+      probeCodeSets = [[]];
+    }
 
-    // Parse WSS_PERF_FP_EVENTS=... from stdout
-    const exportMatch = probeResult.stdout.match(/WSS_PERF_FP_EVENTS=([^\s]+)/);
+    let exportMatch = null;
+    const probeOutputs = [];
+    for (const codes of probeCodeSets) {
+      const probeCodes = codes.join(' ');
+      const probeCmd = `wss_probe_fp_events ${probeCodes} 2>&1`;
+      const probeResult = await sh(probeCmd);
+      const probeOutput = probeResult.stdout + (probeResult.stderr || '');
+      probeOutputs.push(probeOutput);
+      exportMatch = probeResult.stdout.match(/WSS_PERF_FP_EVENTS=([^\s]+)/);
+      if (exportMatch) break;
+    }
+    fpProbeOutput = probeOutputs.join('\n--- retry ---\n');
+
     if (exportMatch) {
       state.fpEvents = exportMatch[1];
       fpEvents = state.fpEvents.split(',').filter(Boolean);

@@ -30,8 +30,8 @@ PAPI_FP_EVENTS=""
 PAPI_MEM_EVENTS=""
 
 if echo "$PAPI_COMP" | grep -q "Name:.*perf_event"; then
-    # Extract the error line if present (e.g. "libpfm4 no default PMU found")
-    PAPI_ERR=$(echo "$PAPI_COMP" | grep -i "Error:" | head -1 | sed 's/.*Error:[[:space:]]*//' | xargs)
+    # Extract the disabled reason if present (e.g. "libpfm4 no default PMU found")
+    PAPI_ERR=$(echo "$PAPI_COMP" | sed -n '/Name:[[:space:]]*perf_event/,/^Name:/p' | grep -i "Disabled:" | head -1 | sed 's/.*Disabled:[[:space:]]*//' | xargs)
     if [ -n "$PAPI_ERR" ]; then
         echo "  perf_event component : FAILED"
         echo "    Reason: $PAPI_ERR"

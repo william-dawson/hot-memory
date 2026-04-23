@@ -116,9 +116,12 @@ hotspot discovery, instrumentation, rebuild, and profiled execution. Ask
 permission before proceeding.
 
 What to do with the result:
+- Show the raw capability result to the user before paraphrasing it.
 - Read `summary.unavailable` and report each item to the user before proceeding.
-- If `fp_events` is empty and `perf_stat_ok` is true, try calling again with
-  architecture-specific extra codes (e.g. `["0x74","0x75"]` for ARM Grace/Neoverse).
+- On `aarch64`, the tool should automatically retry with `["0x74","0x75"]`
+  when PAPI FP events are unavailable. If `fp_events` is still empty and
+  `perf_stat_ok` is true, then try again with additional architecture-specific
+  extra codes.
 - If `clear_refs_ok` is false, stop and tell the user to re-run with `--privileged`.
 - The tool stores `fp_events` internally; `wss_run_profiled` picks them up automatically.
 
