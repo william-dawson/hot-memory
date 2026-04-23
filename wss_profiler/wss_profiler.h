@@ -200,17 +200,37 @@ static inline void _wss_perf_fp_init(void)
         }
 
         /* Smoke-test: verify the counter increments for userspace FP.
+         * Keep several arrays live and reduce across all of them so the
+         * compiler cannot optimize the workload down to a tiny scalar case.
          * perf_event_open can succeed but read 0 forever when the PMU
          * is not accessible from userspace (some containers, VMs). */
         ioctl(fd, PERF_EVENT_IOC_RESET,  0);
         ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
         {
-            double _wss_smoke[64];
-            for (int _k = 0; _k < 64; _k++) _wss_smoke[_k] = (double)(_k + 1);
-            for (int _rep = 0; _rep < 1000; _rep++)
-                for (int _k = 0; _k < 64; _k++)
-                    _wss_smoke[_k] = _wss_smoke[_k] * 1.0000001 + 1e-15;
-            volatile double _wss_sink = _wss_smoke[0]; (void)_wss_sink;
+            enum { _WSS_SMOKE_N = 256, _WSS_SMOKE_REPS = 4000 };
+            double _wss_a[_WSS_SMOKE_N], _wss_b[_WSS_SMOKE_N], _wss_c[_WSS_SMOKE_N];
+            for (int _k = 0; _k < _WSS_SMOKE_N; _k++) {
+                _wss_a[_k] = (double)(_k + 1);
+                _wss_b[_k] = (double)(2 * _k + 1) * 1e-3;
+                _wss_c[_k] = (double)(3 * _k + 1) * 1e-6;
+            }
+            for (int _rep = 0; _rep < _WSS_SMOKE_REPS; _rep++) {
+                for (int _k = 0; _k < _WSS_SMOKE_N; _k++) {
+                    double _wss_ai = _wss_a[_k];
+                    double _wss_bi = _wss_b[_k];
+                    double _wss_ci = _wss_c[_k];
+                    _wss_ai = _wss_ai * 1.0000001 + _wss_bi * 0.9999999 + 1e-15;
+                    _wss_bi = _wss_bi * 1.0000002 + _wss_ci * 0.9999998 + 1e-16;
+                    _wss_ci = _wss_ci + _wss_ai * _wss_bi * 1e-12;
+                    _wss_a[_k] = _wss_ai;
+                    _wss_b[_k] = _wss_bi;
+                    _wss_c[_k] = _wss_ci;
+                }
+            }
+            double _wss_sum = 0.0;
+            for (int _k = 0; _k < _WSS_SMOKE_N; _k++)
+                _wss_sum += _wss_a[_k] + _wss_b[_k] + _wss_c[_k];
+            volatile double _wss_sink = _wss_sum; (void)_wss_sink;
         }
         ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
         long long smoke_count = 0;

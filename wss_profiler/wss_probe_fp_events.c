@@ -48,20 +48,45 @@ static long _probe_perf_open(unsigned long config)
 }
 
 /*
- * FP microbenchmark — non-volatile so the compiler vectorises it.
- * On SVE machines gcc uses SVE instructions (counted by 0x75).
- * On NEON/ASIMD machines gcc uses NEON (counted by 0x74).
- * On x86 gcc uses SSE/AVX.
- * A volatile read of the result at the end prevents dead-code elimination.
+ * FP microbenchmark.
+ *
+ * Keep several arrays live and reduce across all of them at the end so the
+ * compiler cannot collapse the work down to a tiny scalar loop. The goal is
+ * not to benchmark throughput; it is simply to generate an unambiguous stream
+ * of userspace FP instructions for PMU validation.
  */
 static double run_fp_work(void)
 {
-    double arr[1024];
-    for (int i = 0; i < 1024; i++) arr[i] = (double)(i + 1);
-    for (int rep = 0; rep < 2000; rep++)
-        for (int i = 0; i < 1024; i++)
-            arr[i] = arr[i] * 1.0000001 + 1e-15;
-    volatile double sink = arr[0];
+    enum { N = 256, REPS = 4000 };
+    double a[N], b[N], c[N];
+
+    for (int i = 0; i < N; i++) {
+        a[i] = (double)(i + 1);
+        b[i] = (double)(2 * i + 1) * 1e-3;
+        c[i] = (double)(3 * i + 1) * 1e-6;
+    }
+
+    for (int rep = 0; rep < REPS; rep++) {
+        for (int i = 0; i < N; i++) {
+            double ai = a[i];
+            double bi = b[i];
+            double ci = c[i];
+
+            ai = ai * 1.0000001 + bi * 0.9999999 + 1e-15;
+            bi = bi * 1.0000002 + ci * 0.9999998 + 1e-16;
+            ci = ci + ai * bi * 1e-12;
+
+            a[i] = ai;
+            b[i] = bi;
+            c[i] = ci;
+        }
+    }
+
+    double sum = 0.0;
+    for (int i = 0; i < N; i++)
+        sum += a[i] + b[i] + c[i];
+
+    volatile double sink = sum;
     return (double)sink;
 }
 
