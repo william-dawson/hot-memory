@@ -1,0 +1,227 @@
+\documentclass[aspectratio=169]{beamer}
+
+\usetheme{Boadilla}
+\setbeamertemplate{navigation symbols}{}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+
+\definecolor{hmblue}{RGB}{22,74,124}
+\definecolor{hmlightblue}{RGB}{233,241,249}
+\definecolor{hmgold}{RGB}{173,122,34}
+\definecolor{hmgray}{RGB}{70,70,70}
+\definecolor{hmsoft}{RGB}{246,247,249}
+\setbeamercolor{structure}{fg=hmblue}
+\setbeamercolor{frametitle}{fg=hmblue}
+\setbeamercolor{title}{fg=hmblue}
+\setbeamercolor{normal text}{fg=black,bg=hmsoft}
+\setbeamercolor{block title}{fg=white,bg=hmblue}
+\setbeamercolor{block body}{fg=black,bg=hmlightblue}
+\setbeamercolor{itemize item}{fg=hmblue}
+\setbeamercolor{enumerate item}{fg=hmblue}
+\setbeamerfont{title}{series=\bfseries,size=\Large}
+\setbeamerfont{frametitle}{series=\bfseries,size=\large}
+\setbeamerfont{block title}{series=\bfseries}
+
+\setbeamertemplate{frametitle}{
+  \vspace{0.2em}
+  \insertframetitle
+  \par
+  \vspace{0.2em}
+  {\color{hmgold}\rule{\linewidth}{0.8pt}}
+}
+
+\title{Hot Memory}
+\subtitle{GPU Profiling and a New Outsourcing Model}
+\author{William Dawson}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Research Question and Delivery Goal}
+  \textbf{Research question}
+  \begin{itemize}
+    \item I want to port an MPI code to a low-memory GPU.
+    \item I am afraid the code will run out of memory.
+    \item The real question is not total allocation, but:
+    \item \hspace{1em} Which kernels touch how much \textbf{hot memory} while they run?
+    \item \hspace{1em} Which kernels are compute-heavy, and which are memory-traffic-heavy?
+  \end{itemize}
+
+  \vspace{0.5em}
+  \textbf{Outsourcing goal}
+  \begin{itemize}
+    \item We want to outsource not just a tool, but a way of working.
+    \item The deliverable is a container with the profiler, the dependencies,
+          and the agent instructions needed to use it.
+    \item The user should be able to drop into \texttt{claude} and continue
+          the analysis collaboratively after delivery.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Methodology: How We Grab Hot Memory}
+  \begin{block}{Definition}
+    The hot memory of a kernel is the set of unique memory pages touched
+    while that kernel executes.
+  \end{block}
+
+  \vspace{0.5em}
+  What Linux is tracking for us:
+  \begin{itemize}
+    \item each virtual-memory page has a \texttt{Referenced} state
+    \item if the process touches a page, the kernel marks it as referenced
+    \item \texttt{/proc/self/smaps} exposes those per-mapping reference counts
+  \end{itemize}
+
+  \vspace{0.5em}
+  What our instrumentation does:
+  \begin{enumerate}
+    \item \texttt{WSS\_BEGIN()} writes \texttt{1} to \texttt{/proc/self/clear\_refs}
+    \item Linux clears the current referenced state on the process pages
+    \item the kernel runs normally
+    \item pages touched during that interval become referenced again
+    \item \texttt{WSS\_END()} reads \texttt{/proc/self/smaps} and sums the
+          new \texttt{Referenced:} totals
+  \end{enumerate}
+
+  \vspace{0.5em}
+  So the result is:
+  \begin{itemize}
+    \item the unique 4 KB pages touched during one kernel
+    \item not the whole process allocation
+    \item exactly the working-set quantity we need for GPU residency decisions
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Example: One Kernel Broken Down}
+  \begin{block}{Example situation}
+    The application allocates much more memory than any one kernel actually needs.
+  \end{block}
+
+  \vspace{0.5em}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.47\textwidth}
+      \textbf{What we want to know}
+      \begin{itemize}
+        \item Peak RSS might be 20 GB.
+        \item This kernel may only touch 2 GB while it runs.
+        \item That 2 GB is the footprint that must be near the GPU.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \textbf{How to read it}
+      \begin{itemize}
+        \item If the kernel is memory-bound and 2 GB does not fit, that is bad.
+        \item If it is compute-bound, some transfer cost may be hidden.
+        \item If 2 GB fits, colder data may move outside the kernel.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.5em}
+  So each kernel gets three signals:
+  \begin{itemize}
+    \item \textbf{Hot MB}: what must fit
+    \item \textbf{GFLOP}: arithmetic work
+    \item \textbf{Memory accesses}: traffic / reuse pressure
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Workflow Embedded in the Skill}
+  The profiling skill is not just documentation. It encodes a way of working
+  with the user.
+
+  \vspace{0.5em}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.5\textwidth}
+      \textbf{Workflow}
+      \begin{enumerate}
+        \item confirm baseline build and run
+        \item run a capability check
+        \item measure peak RSS
+        \item run perf hotspot discovery
+        \item propose instrumentation points
+        \item rebuild with profiling
+        \item run the profiled code and interpret the result
+      \end{enumerate}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \textbf{Interaction model}
+      \begin{itemize}
+        \item explain the next step
+        \item explain why it matters
+        \item say what remains
+        \item ask permission before major actions
+        \item use the project's build system if it exists
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.5em}
+  This is the outsourcing idea in practice:
+  \begin{itemize}
+    \item the methodology is packaged
+    \item the toolchain is packaged
+    \item the collaboration protocol is packaged
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Hardest and Ongoing Challenges}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.31\textwidth}
+      \textbf{Profiling inside a container}
+      \begin{itemize}
+        \item R-CCS cloud jobs run inside containers themselves
+        \item \texttt{/proc/self/clear\_refs} and \texttt{perf\_event\_open}
+              may be blocked by the outer container policy
+        \item Need \texttt{--privileged} or capability grants that the
+              cluster may not expose
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      \textbf{Keeping the agent honest}
+      \begin{itemize}
+        \item Agent ignores warnings in output and moves on
+        \item Trusts documentation over observed results
+        \item Tendency to report 0 GFLOP as the answer rather than diagnose
+        \item Skill must be written defensively: force reconciliation,
+              not trust
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      \textbf{The right human experience}
+      \begin{itemize}
+        \item The goal is not automation
+        \item The goal is the optimal copilot: the user stays in control,
+              the agent removes friction
+        \item Interaction protocol matters as much as tool correctness
+        \item Still learning what that balance looks like in practice
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Project}
+  \begin{block}{GitHub}
+    \texttt{https://github.com/william-dawson/hot-memory}
+  \end{block}
+
+  \vspace{0.5em}
+  Repository contents:
+  \begin{itemize}
+    \item Singularity / Apptainer container definition
+    \item WSS profiler library and MCP server
+    \item profiler skill and code-skill template
+    \item worked examples, including the built-in benchmark
+  \end{itemize}
+\end{frame}
+
+\end{document}
