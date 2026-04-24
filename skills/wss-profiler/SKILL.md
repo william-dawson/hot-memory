@@ -188,6 +188,13 @@ proceeding.
 
 - Read `raw_report`. Identify the top functions by sample %. Note which are
   in user code vs. MPI/library code.
+- Treat too-few-samples as a profiling setup problem, not a code conclusion.
+  If the report is dominated by MPI/runtime frames or has very few samples,
+  rerun with a longer-lived workload or more iterations before deciding that
+  the user kernels are absent.
+- The intended perf configuration is cycle sampling with frequent samples and
+  DWARF call stacks. If you need to reason about the raw command, expect
+  `perf record -e cycles -F 99 --call-graph=dwarf`.
 - Tell the user which functions appear hottest and ask which to instrument,
   or make a recommendation based on the data.
 - If `exit_code` is non-zero and `perf_record_output` mentions "Permission denied",

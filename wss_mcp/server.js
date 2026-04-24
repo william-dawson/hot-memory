@@ -331,13 +331,13 @@ async function wssPerfProfile(args) {
   const { mpirun_prefix: mpirunPrefix = '', binary_command: binaryCommand } = args;
   const recordCmd = buildMpiRank0Command(
     mpirunPrefix,
-    'perf record -g -F 99 -o /tmp/wss_perf.data --',
+    'perf record -e cycles -F 99 --call-graph=dwarf -o /tmp/wss_perf.data --',
     binaryCommand,
   );
   const recordResult = await sh(recordCmd);
 
   const reportResult = await sh(
-    'perf report -n --stdio --no-children -i /tmp/wss_perf.data 2>/dev/null | head -80',
+    'perf report -n --stdio -i /tmp/wss_perf.data 2>/dev/null | head -200',
   );
 
   return {

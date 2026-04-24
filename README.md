@@ -77,9 +77,13 @@ git clone https://github.com/william-dawson/hot-memory.git
 cd hot-memory
 ```
 
-The wrapper script `hotmemory.sh` will automatically download the correct
-pre-built container (amd64 or arm64) on first run. To build from source
-instead, run `singularity build --fakeroot hotmemory.sif hotmemory.def`.
+Build the container from source:
+```bash
+singularity build --fakeroot hotmemory.sif hotmemory.def
+```
+
+If a pre-built release SIF is available, `hotmemory.sh` will download it
+automatically on first run instead.
 
 **2. Set your credentials**
 

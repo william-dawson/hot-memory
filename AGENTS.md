@@ -97,14 +97,14 @@ FLOP counts depend on PAPI availability and whether the perf fallback activates 
 ```bash
 gh release create v1.0.0 --title "v1.0.0" --notes "..."
 ```
-CI (`singularity.yml`) builds and attaches `hotmemory.sif` automatically. On ordinary pushes to `main`, the SIF is only a 90-day workflow artifact, not a release download.
+Build and attach `hotmemory.sif` manually after tagging: `apptainer build hotmemory.sif hotmemory.def`, then `gh release upload v1.0.0 hotmemory.sif`.
 
 ---
 
 ## Platform constraints — critical
 
 - **Linux only (amd64 or aarch64).** `perf` and PAPI hardware counters require a real Linux kernel. Docker Desktop for Mac runs in a VM that does not expose CPU performance counters. All testing must happen on a Linux host or HPC node.
-- **Build the SIF on the target architecture.** The CI workflow produces an amd64 SIF. For ARM (e.g. NVIDIA Grace / Neoverse V2), build directly on the Grace node: `singularity build --fakeroot hotmemory.sif hotmemory.def`.
+- **Build the SIF on the target architecture.** Build directly on the target node. For ARM (e.g. NVIDIA Grace / Neoverse V2): `singularity build --fakeroot hotmemory.sif hotmemory.def`.
 - **PAPI on ARM (Neoverse V2).** Run `papi_avail | grep -E 'PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS'` inside the container after building. If the standard presets are unavailable the header falls back gracefully (FLOPs reported as 0 with a message). See the PAPI fallback chain note in the header section below.
 - **Privileged runtime required.** Writing to `/proc/self/clear_refs` (WSS measurement) needs `CAP_SYS_RESOURCE`; `perf_event_open` needs `kernel.perf_event_paranoid` ≤ 0 set on the host. Use `--fakeroot` with Singularity.
 - **Soft degradation.** The workflow works without `perf_event_paranoid` — hot-byte measurement via `/proc/clear_refs` needs only `--fakeroot`. `perf` and PAPI FLOP counts require the sysctl change. Without it, Phase 1 is unavailable and FLOPs report as 0.
