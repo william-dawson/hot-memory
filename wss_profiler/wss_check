@@ -77,22 +77,29 @@ probe_value() {
 HOT_BYTES_OK=$(probe_value HOT_BYTES_OK)
 FP_OK=$(probe_value FP_OK)
 MEM_BYTES_OK=$(probe_value MEM_BYTES_OK)
+MEM_OK=$(probe_value MEM_OK)
 HOT_MB=$(probe_value HOT_MB)
 ACCESSED_MB=$(probe_value ACCESSED_MB)
+ACCESS_EVENTS_M=$(probe_value ACCESS_EVENTS_M)
 GFLOP=$(probe_value GFLOP)
 FP_SOURCE=$(probe_value FP_SOURCE)
+MEM_SOURCE=$(probe_value MEM_SOURCE)
 WSS_PERF_FP_EVENTS=$(probe_value WSS_PERF_FP_EVENTS_ENV)
 PAPI_FP_EVENT_COUNT=$(probe_value PAPI_FP_EVENT_COUNT)
 PAPI_MEM_EVENT_COUNT=$(probe_value PAPI_MEM_EVENT_COUNT)
 PERF_FP_FD_COUNT=$(probe_value PERF_FP_FD_COUNT)
+PERF_MEM_FD_COUNT=$(probe_value PERF_MEM_FD_COUNT)
 
 echo "  hot MB               : ${HOT_MB:-0}"
 echo "  accessed MB          : ${ACCESSED_MB:-0}"
+echo "  access events (M)    : ${ACCESS_EVENTS_M:-0}"
 echo "  gflop                : ${GFLOP:-0}"
 echo "  fp source            : ${FP_SOURCE:-none}"
+echo "  mem source           : ${MEM_SOURCE:-none}"
 echo "  papi fp event count  : ${PAPI_FP_EVENT_COUNT:-0}"
 echo "  papi mem event count : ${PAPI_MEM_EVENT_COUNT:-0}"
 echo "  perf fp fd count     : ${PERF_FP_FD_COUNT:-0}"
+echo "  perf mem fd count    : ${PERF_MEM_FD_COUNT:-0}"
 
 if [ -n "$WSS_PERF_FP_EVENTS" ]; then
     echo "  WSS_PERF_FP_EVENTS   : $WSS_PERF_FP_EVENTS"
@@ -136,11 +143,13 @@ else
 fi
 
 if [ "$_PROBE_RC" != "0" ]; then
-    UNAVAILABLE="${UNAVAILABLE}  ✗  Bytes accessed / reuse factor — WSS runtime probe launch failed\n"
+    UNAVAILABLE="${UNAVAILABLE}  ✗  Memory-access metric — WSS runtime probe launch failed\n"
 elif [ "$MEM_BYTES_OK" = "1" ]; then
     AVAILABLE="${AVAILABLE}  ✓  Bytes accessed + reuse factor (WSS runtime path)\n"
+elif [ "$MEM_OK" = "1" ] && [ "$MEM_SOURCE" = "perf_mem_access" ]; then
+    AVAILABLE="${AVAILABLE}  ✓  PMU memory-access fallback (mem_access event count)\n"
 else
-    UNAVAILABLE="${UNAVAILABLE}  ✗  Bytes accessed / reuse factor — WSS runtime probe ran but reported 0 accessed MB\n"
+    UNAVAILABLE="${UNAVAILABLE}  ✗  Memory-access metric — WSS runtime probe ran but reported 0 accesses\n"
 fi
 
 printf "Available:\n%b\n" "$AVAILABLE"

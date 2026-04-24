@@ -67,27 +67,40 @@ function parseWssOutput(combined) {
   const errors = [];
   const initMessages = [];
 
-  // Regex for measurement lines:
-  // [WSS] kernel_name   512.0 MB hot   1024.0 MB accessed   0.480 GFLOP   0.98 FLOP/B-hot   0.47 FLOP/B-acc
-  const measureRe = /\[WSS\]\s+(\S+)\s+([\d.]+)\s+MB\s+hot\s+([\d.]+)\s+MB\s+accessed\s+([\d.]+)\s+GFLOP\s+([\d.]+)\s+FLOP\/B-hot\s+([\d.]+)\s+FLOP\/B-acc/;
+  const measureBytesRe = /\[WSS\]\s+(\S+)\s+([\d.]+)\s+MB\s+hot\s+([\d.]+)\s+MB\s+accessed\s+([\d.]+)\s+GFLOP\s+([\d.]+)\s+FLOP\/B-hot\s+([\d.]+)\s+FLOP\/B-acc/;
+  const measureAccessRe = /\[WSS\]\s+(\S+)\s+([\d.]+)\s+MB\s+hot\s+([\d.]+)\s+M\s+accesses\s+([\d.]+)\s+GFLOP\s+([\d.]+)\s+FLOP\/B-hot\s+([\d.]+)\s+FLOP\/access/;
 
   for (const line of combined.split('\n')) {
     if (!line.includes('[WSS]')) continue;
 
-    const m = measureRe.exec(line);
-    if (m) {
+    const bytesMatch = measureBytesRe.exec(line);
+    if (bytesMatch) {
       measurements.push({
-        kernel: m[1],
-        hot_mb: parseFloat(m[2]),
-        accessed_mb: parseFloat(m[3]),
-        gflop: parseFloat(m[4]),
-        flop_per_byte_hot: parseFloat(m[5]),
-        flop_per_byte_acc: parseFloat(m[6]),
+        kernel: bytesMatch[1],
+        hot_mb: parseFloat(bytesMatch[2]),
+        accessed_mb: parseFloat(bytesMatch[3]),
+        gflop: parseFloat(bytesMatch[4]),
+        flop_per_byte_hot: parseFloat(bytesMatch[5]),
+        flop_per_byte_acc: parseFloat(bytesMatch[6]),
+        access_metric_kind: 'bytes',
       });
-    } else if (line.includes('[WSS] ERROR')) {
-      errors.push(line.trim());
     } else {
-      initMessages.push(line.trim());
+      const accessMatch = measureAccessRe.exec(line);
+      if (accessMatch) {
+        measurements.push({
+          kernel: accessMatch[1],
+          hot_mb: parseFloat(accessMatch[2]),
+          access_events_m: parseFloat(accessMatch[3]),
+          gflop: parseFloat(accessMatch[4]),
+          flop_per_byte_hot: parseFloat(accessMatch[5]),
+          flop_per_access: parseFloat(accessMatch[6]),
+          access_metric_kind: 'events',
+        });
+      } else if (line.includes('[WSS] ERROR')) {
+        errors.push(line.trim());
+      } else {
+        initMessages.push(line.trim());
+      }
     }
   }
 
@@ -213,17 +226,21 @@ async function wssCapabilityCheck(args) {
 
   const hotMb = parseFloat(runtimeValues.HOT_MB || '0');
   const accessedMb = parseFloat(runtimeValues.ACCESSED_MB || '0');
+  const accessEventsM = parseFloat(runtimeValues.ACCESS_EVENTS_M || '0');
   const gflop = parseFloat(runtimeValues.GFLOP || '0');
   const hotBytesOk = runtimeValues.HOT_BYTES_OK === '1';
   const fpOk = runtimeValues.FP_OK === '1';
   const memBytesOk = runtimeValues.MEM_BYTES_OK === '1';
+  const memOk = runtimeValues.MEM_OK === '1';
   const fpSource = runtimeValues.FP_SOURCE || 'none';
+  const memSource = runtimeValues.MEM_SOURCE || 'none';
   const fpEventsEnv = runtimeValues.WSS_PERF_FP_EVENTS_ENV || '';
   const fpEventsProvenance = runtimeValues.FP_EVENTS_PROVENANCE || 'none';
   const capabilityTruthSource = runtimeValues.CAPABILITY_TRUTH_SOURCE || 'wss_runtime_probe';
   const papiFpEventCount = parseInt(runtimeValues.PAPI_FP_EVENT_COUNT || '0', 10);
   const papiMemEventCount = parseInt(runtimeValues.PAPI_MEM_EVENT_COUNT || '0', 10);
   const perfFpFdCount = parseInt(runtimeValues.PERF_FP_FD_COUNT || '0', 10);
+  const perfMemFdCount = parseInt(runtimeValues.PERF_MEM_FD_COUNT || '0', 10);
   const fpEvents = fpEventsEnv ? fpEventsEnv.split(',').filter(Boolean) : [];
 
   if (!runtimeProbeLaunchOk) {
@@ -246,8 +263,10 @@ async function wssCapabilityCheck(args) {
 
     if (memBytesOk) {
       available.push('Bytes accessed + reuse factor (verified through WSS runtime probe)');
+    } else if (memOk && memSource === 'perf_mem_access') {
+      available.push('PMU memory-access fallback (mem_access event count)');
     } else {
-      unavailable.push('Bytes accessed / reuse factor — WSS runtime probe ran but reported 0 accessed MB');
+      unavailable.push('Memory-access metric — WSS runtime probe ran but reported 0 accesses');
     }
   }
 
@@ -272,9 +291,12 @@ async function wssCapabilityCheck(args) {
     fp_events_provenance: fpEventsProvenance,
     clear_refs_ok: hotBytesOk,
     fp_source: fpSource,
+    mem_source: memSource,
     perf_fp_fd_count: perfFpFdCount,
+    perf_mem_fd_count: perfMemFdCount,
     hot_mb_probe: hotMb,
     accessed_mb_probe: accessedMb,
+    access_events_m_probe: accessEventsM,
     gflop_probe: gflop,
     runtime_probe_output: runtimeOutput,
     summary: { available, unavailable },

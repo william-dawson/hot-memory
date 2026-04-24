@@ -15,7 +15,9 @@
  *   [WSS] kernel_name     512.0 MB hot   1024.0 MB accessed   0.480 GFLOP   0.98 FLOP/byte-hot   0.47 FLOP/byte-accessed
  *
  *   "MB accessed" and "FLOP/byte-accessed" are only reported when PAPI
- *   load/store counters are available. Otherwise they show as 0.
+ *   load/store counters are available. On aarch64 systems where those PAPI
+ *   events are missing, the profiler falls back to raw PMU mem_access events
+ *   and reports "M accesses" plus "FLOP/access" instead.
  *
  * FP counting:
  *   PAPI is tried first. If PAPI provides no FP events (e.g. libpfm4 doesn't
@@ -36,7 +38,8 @@
  * Requirements:
  *   - Linux amd64 or aarch64 (uses /proc/self/clear_refs and /proc/self/smaps)
  *   - PAPI (libpapi-dev) for FP and load/store counting (optional: degrades
- *     gracefully; perf_event_open fallback used when PAPI FP unavailable)
+ *     gracefully; perf_event_open fallback used when PAPI FP unavailable, and
+ *     mem_access fallback used when PAPI load/store unavailable on aarch64)
  *   - MPI (for rank filtering)
  *   - OpenMP should be disabled or ignored for analysis; counters only
  *     measure the main thread
@@ -77,6 +80,8 @@ extern int    _wss_papi_ok;                 /* PAPI library initialized */
 extern int    _wss_active;                  /* 1 between WSS_BEGIN and WSS_END */
 extern int    _wss_fp_fds[WSS_MAX_FP_EVENTS]; /* perf_event_open fds for FP fallback */
 extern int    _wss_n_fp_fds;               /* number of open perf FP fds */
+extern int    _wss_mem_fds[WSS_MAX_FP_EVENTS]; /* perf_event_open fds for mem_access fallback */
+extern int    _wss_n_mem_fds;              /* number of open perf mem fds */
 
 /* ── internal helpers (defined inline to avoid duplicate-symbol errors) ─── */
 
@@ -129,6 +134,77 @@ static inline void _wss_papi_init(void)
         PAPI_destroy_eventset(&_wss_eventset);
         _wss_eventset = PAPI_NULL;
     }
+}
+
+/*
+ * _wss_perf_mem_init() — open perf_event_open fds for memory-access counting.
+ *
+ * Called after _wss_papi_init(). Only activates when PAPI provided no memory
+ * events (_wss_nmem_events == 0). On aarch64, if WSS_PERF_MEM_EVENTS is not
+ * set, default to 0x13 (architectural MEM_ACCESS).
+ */
+static inline void _wss_perf_mem_init(void)
+{
+    if (_wss_nmem_events > 0)
+        return;  /* PAPI already has memory access covered */
+
+    const char *env = getenv("WSS_PERF_MEM_EVENTS");
+#ifdef __aarch64__
+    if (!env || env[0] == '\0')
+        env = "0x13";
+#endif
+    if (!env || env[0] == '\0') {
+        fprintf(stderr, "[WSS] WSS_PERF_MEM_EVENTS not set — total memory"
+                        " accesses via perf_event_open disabled.\n");
+        return;
+    }
+
+    char buf[256];
+    strncpy(buf, env, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    char *tok = buf;
+    char *next;
+    while (tok && *tok && _wss_n_mem_fds < WSS_MAX_FP_EVENTS) {
+        next = strchr(tok, ',');
+        if (next) *next++ = '\0';
+
+        while (*tok == ' ' || *tok == '\t') tok++;
+
+        unsigned long code = strtoul(tok, NULL, 0);
+        if (code == 0) { tok = next; continue; }
+
+        struct perf_event_attr pe = {0};
+        pe.size           = sizeof(pe);
+        pe.type           = PERF_TYPE_RAW;
+        pe.config         = code;
+        pe.disabled       = 1;
+        pe.exclude_kernel = 1;
+        pe.exclude_hv     = 1;
+        pe.inherit        = 0;
+
+        int fd = (int)syscall(__NR_perf_event_open, &pe,
+                              0 /*pid: self*/, -1 /*cpu: any*/,
+                              -1 /*group*/, 0 /*flags*/);
+        if (fd < 0) {
+            fprintf(stderr, "[WSS] perf_event_open(mem event=0x%lx) failed: %m"
+                            " — skipping this code\n", code);
+            tok = next;
+            continue;
+        }
+
+        fprintf(stderr, "[WSS] perf_event_open memory fallback: event 0x%lx ✓\n",
+                code);
+        _wss_mem_fds[_wss_n_mem_fds++] = fd;
+        tok = next;
+    }
+
+    if (_wss_n_mem_fds == 0)
+        fprintf(stderr, "[WSS] No WSS_PERF_MEM_EVENTS codes worked —"
+                        " total memory accesses will be 0\n");
+    else
+        fprintf(stderr, "[WSS] Using %d perf_event_open fd(s) for memory"
+                        " access counting\n", _wss_n_mem_fds);
 }
 
 /*
@@ -285,6 +361,28 @@ static inline long long _wss_perf_stop(void)
     return _total;
 }
 
+/* Reset and enable all perf memory-access fds — called at WSS_BEGIN */
+static inline void _wss_perf_mem_start(void)
+{
+    for (int _i = 0; _i < _wss_n_mem_fds; _i++) {
+        ioctl(_wss_mem_fds[_i], PERF_EVENT_IOC_RESET,  0);
+        ioctl(_wss_mem_fds[_i], PERF_EVENT_IOC_ENABLE, 0);
+    }
+}
+
+/* Disable all perf memory-access fds and return sum of counts — called at WSS_END */
+static inline long long _wss_perf_mem_stop(void)
+{
+    long long _total = 0;
+    for (int _i = 0; _i < _wss_n_mem_fds; _i++) {
+        ioctl(_wss_mem_fds[_i], PERF_EVENT_IOC_DISABLE, 0);
+        long long _c = 0;
+        read(_wss_mem_fds[_i], &_c, sizeof(long long));
+        _total += _c;
+    }
+    return _total;
+}
+
 static inline void _wss_clear_refs(void)
 {
     FILE *f = fopen("/proc/self/clear_refs", "w");
@@ -330,6 +428,7 @@ static inline long long _wss_read_referenced_kb(void)
         if (_wss_rank == 0) { \
             _wss_papi_init(); \
             _wss_perf_fp_init(); \
+            _wss_perf_mem_init(); \
             fprintf(stderr, "[WSS] Profiling active on rank 0\n"); \
         } \
     } while (0)
@@ -353,6 +452,7 @@ static inline long long _wss_read_referenced_kb(void)
                 if (_wss_eventset != PAPI_NULL) \
                     PAPI_start(_wss_eventset); \
                 _wss_perf_start(); \
+                _wss_perf_mem_start(); \
             } \
         } \
     } while (0)
@@ -380,19 +480,20 @@ static inline long long _wss_read_referenced_kb(void)
             if (_wss_eventset != PAPI_NULL) \
                 PAPI_stop(_wss_eventset, _wss_vals); \
             long long _wss_perf_fp = _wss_perf_stop(); \
+            long long _wss_perf_mem = _wss_perf_mem_stop(); \
             long long _wss_ref_kb  = _wss_read_referenced_kb(); \
             long long _wss_flops   = _wss_perf_fp; \
             for (int _i = 0; _i < _wss_nfp_events; _i++) \
                 _wss_flops += _wss_vals[_i]; \
-            long long _wss_memops  = 0; \
+            long long _wss_memops  = _wss_perf_mem; \
             for (int _i = _wss_nfp_events; \
                  _i < _wss_nfp_events + _wss_nmem_events; _i++) \
                 _wss_memops += _wss_vals[_i]; \
             double _wss_hot_mb     = (_wss_ref_kb >= 0) \
                                      ? _wss_ref_kb / 1024.0 : 0.0; \
             double _wss_gflop      = _wss_flops / 1.0e9; \
-            /* Estimate total bytes accessed: each LD/SR is ~8 bytes (double) */ \
             double _wss_accessed_mb = (_wss_memops * 8.0) / (1024.0 * 1024.0); \
+            double _wss_maccess_m = _wss_memops / 1.0e6; \
             double _wss_fpb_hot    = (_wss_ref_kb > 0) \
                                      ? (double)_wss_flops \
                                        / ((double)_wss_ref_kb * 1024.0) \
@@ -400,11 +501,28 @@ static inline long long _wss_read_referenced_kb(void)
             double _wss_fpb_acc    = (_wss_accessed_mb > 0.0) \
                                      ? _wss_gflop * 1024.0 / _wss_accessed_mb \
                                      : 0.0; \
-            fprintf(stderr, \
-                    "[WSS] %-24s %8.1f MB hot  %8.1f MB accessed" \
-                    "  %8.3f GFLOP  %6.2f FLOP/B-hot  %6.2f FLOP/B-acc\n", \
-                    (name), _wss_hot_mb, _wss_accessed_mb, \
-                    _wss_gflop, _wss_fpb_hot, _wss_fpb_acc); \
+            double _wss_flop_per_access = (_wss_memops > 0) \
+                                          ? (double)_wss_flops / (double)_wss_memops \
+                                          : 0.0; \
+            if (_wss_nmem_events > 0) { \
+                fprintf(stderr, \
+                        "[WSS] %-24s %8.1f MB hot  %8.1f MB accessed" \
+                        "  %8.3f GFLOP  %6.2f FLOP/B-hot  %6.2f FLOP/B-acc\n", \
+                        (name), _wss_hot_mb, _wss_accessed_mb, \
+                        _wss_gflop, _wss_fpb_hot, _wss_fpb_acc); \
+            } else if (_wss_n_mem_fds > 0) { \
+                fprintf(stderr, \
+                        "[WSS] %-24s %8.1f MB hot  %8.1f M accesses" \
+                        "  %8.3f GFLOP  %6.2f FLOP/B-hot  %6.2f FLOP/access\n", \
+                        (name), _wss_hot_mb, _wss_maccess_m, \
+                        _wss_gflop, _wss_fpb_hot, _wss_flop_per_access); \
+            } else { \
+                fprintf(stderr, \
+                        "[WSS] %-24s %8.1f MB hot  %8.1f MB accessed" \
+                        "  %8.3f GFLOP  %6.2f FLOP/B-hot  %6.2f FLOP/B-acc\n", \
+                        (name), _wss_hot_mb, _wss_accessed_mb, \
+                        _wss_gflop, _wss_fpb_hot, _wss_fpb_acc); \
+            } \
             } \
         } \
     } while (0)

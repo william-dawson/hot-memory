@@ -84,8 +84,10 @@ int main(int argc, char **argv)
 
     double hot_mb = 0.0;
     double accessed_mb = 0.0;
+    double access_events_m = 0.0;
     double gflop = 0.0;
     const char *fp_source = "none";
+    const char *mem_source = "none";
     int rank = -1;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -119,12 +121,18 @@ int main(int argc, char **argv)
 
         hot_mb = (ref_kb >= 0) ? ref_kb / 1024.0 : 0.0;
         accessed_mb = (memops * 8.0) / (1024.0 * 1024.0);
+        access_events_m = memops / 1.0e6;
         gflop = flops / 1.0e9;
 
         if (_wss_nfp_events > 0)
             fp_source = "papi";
         else if (_wss_n_fp_fds > 0)
             fp_source = "perf_fallback";
+
+        if (_wss_nmem_events > 0)
+            mem_source = "papi";
+        else if (_wss_n_mem_fds > 0)
+            mem_source = "perf_mem_access";
 
         free(x);
     }
@@ -155,7 +163,11 @@ int main(int argc, char **argv)
         snprintf(buf, sizeof(buf), "%d", _wss_n_fp_fds);
         emit_result("PERF_FP_FD_COUNT", buf);
 
+        snprintf(buf, sizeof(buf), "%d", _wss_n_mem_fds);
+        emit_result("PERF_MEM_FD_COUNT", buf);
+
         emit_result("FP_SOURCE", fp_source);
+        emit_result("MEM_SOURCE", mem_source);
 
         snprintf(buf, sizeof(buf), "%.6f", hot_mb);
         emit_result("HOT_MB", buf);
@@ -163,12 +175,16 @@ int main(int argc, char **argv)
         snprintf(buf, sizeof(buf), "%.6f", accessed_mb);
         emit_result("ACCESSED_MB", buf);
 
+        snprintf(buf, sizeof(buf), "%.6f", access_events_m);
+        emit_result("ACCESS_EVENTS_M", buf);
+
         snprintf(buf, sizeof(buf), "%.6f", gflop);
         emit_result("GFLOP", buf);
 
         emit_result("HOT_BYTES_OK", hot_mb > 0.0 ? "1" : "0");
         emit_result("FP_OK", gflop > 0.0 ? "1" : "0");
         emit_result("MEM_BYTES_OK", accessed_mb > 0.0 ? "1" : "0");
+        emit_result("MEM_OK", (accessed_mb > 0.0 || access_events_m > 0.0) ? "1" : "0");
     }
 
     MPI_Finalize();
