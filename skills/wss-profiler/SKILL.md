@@ -147,17 +147,18 @@ What to do with the result:
   - PMU `mem_access` fallback: total memory-access event count, useful for
     traffic intensity and `FLOP/access` even when `accessed_mb` is unavailable
 - If `clear_refs_ok` is false, stop and tell the user to re-run with `--privileged`.
-- **If `shell_export` is non-empty, run it in the shell immediately after the
-  capability check — before any other commands:**
+- **If `env_prefix` is non-empty, prepend it inline to every command that runs the
+  profiled binary — every single time, without exception:**
   ```
-  export WSS_PERF_FP_EVENTS=0x74,0x75
+  WSS_PERF_FP_EVENTS=0x74,0x75 mpirun -np 4 --bind-to none ./clover_leaf
   ```
-  This ensures the variable is live for every subsequent command: MCP tool calls,
-  manual test runs, rebuild smoke tests, everything. Do not skip this step.
-- The tool also stores `fp_events` internally so `wss_run_profiled` can inject them
-  automatically, but that only covers MCP-mediated runs. The shell export covers all cases.
-- If the profiled output says `WSS_PERF_FP_EVENTS not set`, the shell export was not run
-  or was run in a different shell session. Re-run the export and retry.
+  **Never use `export` in a separate shell call.** Each tool call is an independent
+  shell session, and MPI launchers may also strip inherited environment variables.
+  The only reliable pattern is the inline prefix on the same command line.
+- The MCP tool `wss_run_profiled` handles this automatically. For any manual shell
+  run — test builds, smoke tests, direct invocations — always inline `env_prefix`.
+- If the profiled output says `WSS_PERF_FP_EVENTS not set`, the inline prefix was
+  missing from that specific command. Add it and rerun.
 - If ad-hoc shell experiments disagree with the capability result, rerun the
   capability check and show the raw result again. Do not replace the
   capability model with speculative prose.
@@ -250,9 +251,10 @@ Treat this as three separate permission gates:
    correctly. Only fall back to a manual compiler invocation when the
    project has no build system at all.
 3. Call `wss_run_profiled` with `mpirun_prefix` and `binary_command`.
-   - `WSS_PERF_FP_EVENTS` should already be set from the `shell_export` step in Step 0.
+   - `WSS_PERF_FP_EVENTS` is injected automatically by `wss_run_profiled`. For any
+     manual run, use the `env_prefix` from the capability check result as an inline
+     prefix on the command — never a separate export.
      After the run, confirm the profiled output does NOT contain `WSS_PERF_FP_EVENTS not set`.
-     If it does, re-run the `shell_export` command from the capability check result and retry.
 4. Parse `measurements[]` for results. Check `errors[]` for `[WSS] ERROR` lines.
 5. Present the results table (see "How to interpret results" below).
 
@@ -450,8 +452,8 @@ The generated skill must NOT reference this profiler, WSS macros, PAPI, or any i
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `WSS_PERF_FP_EVENTS not set` in profiled output | Env var not received by binary | Set manually: `export WSS_PERF_FP_EVENTS=<events>` before running |
-| All kernels report `0.000 GFLOP` despite capability check finding FP events | `WSS_PERF_FP_EVENTS` not set (see above) | Do NOT accept 0 GFLOP if capability check returned fp_events — always reconcile |
+| `WSS_PERF_FP_EVENTS not set` in profiled output | Env var not inlined on that command | Prefix inline: `WSS_PERF_FP_EVENTS=0x74,0x75 mpirun ...` — never use a separate export |
+| All kernels report `0.000 GFLOP` despite capability check finding FP events | `env_prefix` not applied to that specific command | Do NOT accept 0 GFLOP if capability check returned fp_events — always reconcile |
 | Capability check shows `fp_events: [0x74, 0x75]` but profiled run says not set | State mismatch between capability check and profiled run | Re-run capability check in same session, then immediately run `wss_run_profiled` |
 | `0 GFLOP` and capability check showed no FP events at all | No PAPI and no working PMU codes | Run `eval $(wss_probe_fp_events)` then re-run capability check with those codes as `extra_codes` |
 | `perf record` fails with Permission denied | `perf_event_paranoid` too high | Skip Phase 2; proceed to Phase 3 if you know target kernels |
