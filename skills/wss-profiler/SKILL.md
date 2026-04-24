@@ -98,6 +98,11 @@ until the baseline build and run are confirmed working.
 If the code normally uses OpenMP, disable it before proceeding. Do not try
 to interpret mixed MPI+OpenMP runs.
 
+If the project already has a build system (`Makefile`, `CMakeLists.txt`,
+configure script, documented build script, etc.), use that build system.
+Do not improvise a handwritten `mpicc`/`gcc` compile line unless there is no
+project build system at all. If a profiling target already exists, use it.
+
 Before doing this prerequisite step, explain that you are validating the
 unmodified baseline first, state that the remaining steps are capability
 check, baseline memory, hotspot discovery, instrumentation, rebuild, and
@@ -136,6 +141,11 @@ What to do with the result:
   pin rank 0 in a way that makes raw perf fallback counters read zero. Retry
   with `mpirun --bind-to none ...` or ensure
   `OMPI_MCA_hwloc_base_binding_policy=none` is set.
+- Distinguish two different memory metrics:
+  - `accessed_mb`: byte-based load/store estimate, only available when PAPI
+    load/store events are available
+  - PMU `mem_access` fallback: total memory-access event count, useful for
+    traffic intensity and `FLOP/access` even when `accessed_mb` is unavailable
 - If `clear_refs_ok` is false, stop and tell the user to re-run with `--privileged`.
 - The tool stores `fp_events` internally; `wss_run_profiled` picks them up automatically.
 - If ad-hoc shell experiments disagree with the capability result, rerun the
@@ -149,7 +159,8 @@ Capability check:
   ✓ perf sampling (hotspot discovery)
   ✗ PAPI FP counters (libpfm4 doesn't know this CPU)
   ✓ perf_event_open fallback: WSS_PERF_FP_EVENTS=0x74,0x75
-  ✗ Load/store counters (total bytes accessed / reuse factor unavailable)
+  ✗ PAPI load/store counters (byte-based accessed MB unavailable)
+  ✓ PMU mem_access fallback (total memory-access events + FLOP/access)
 ```
 
 ### Step 1: `wss_measure_baseline` — peak RSS upper bound
@@ -199,7 +210,14 @@ Treat this as three separate permission gates:
    - Ask permission before editing files.
 
 2. **Rebuild approval**
-   - Explain that you will rebuild with `-DPROFILE_WSS -lwss_profiler -lpapi`.
+   - Explain the exact existing build target or build command you will use.
+   - Prefer the project's own build system or profiling target if one exists
+     (for example `make profile`).
+   - If profiling support is missing, modify the build system or build target
+     so it adds `-DPROFILE_WSS -lwss_profiler -lpapi` correctly.
+   - Do not bypass the build system with a one-off handwritten compiler
+     invocation unless the project has no build system at all.
+   - Explain that profiling requires `-DPROFILE_WSS -lwss_profiler -lpapi`.
    - State that the only remaining step after rebuild is the profiled execution.
    - Ask permission before rebuilding.
 
@@ -209,7 +227,11 @@ Treat this as three separate permission gates:
    - Ask permission before running it.
 
 1. **Add instrumentation** (see "Instrumentation strategy" below).
-2. **Rebuild** with `-DPROFILE_WSS` and link `-lwss_profiler -lpapi`.
+2. **Rebuild** using the project's build system if it exists. Prefer an
+   existing profiling target. If profiling flags are missing, update the
+   build system or build target to add `-DPROFILE_WSS -lwss_profiler -lpapi`
+   correctly. Only fall back to a manual compiler invocation when the
+   project has no build system at all.
 3. Call `wss_run_profiled` with `mpirun_prefix` and `binary_command`.
    - `fp_events` from Step 0 are injected automatically.
 4. Parse `measurements[]` for results. Check `errors[]` for `[WSS] ERROR` lines.
