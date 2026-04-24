@@ -17,6 +17,9 @@ https://github.com/UK-MAC/CloverLeaf_ref.
 
 ## Source layout
 
+The only file in `/workspace` on a fresh mount is `fetch_and_build.sh`.
+Run it first — it clones CloverLeaf and builds it. After that the layout is:
+
 ```
 /workspace/CloverLeaf/
   clover_leaf.f90          — main program entry point
@@ -52,14 +55,18 @@ The kernels called per timestep (in execution order) are:
 
 ## Build command
 
+The CloverLeaf source is not pre-installed. Run the fetch script first —
+it clones the repository and builds it:
+
+```bash
+bash /workspace/fetch_and_build.sh
+```
+
+If the source is already present at `/workspace/CloverLeaf`, rebuild with:
+
 ```bash
 cd /workspace/CloverLeaf
 make COMPILER=GNU
-```
-
-Or use the fetch script which clones and builds:
-```bash
-bash /workspace/fetch_and_build.sh
 ```
 
 ### Extending the build
