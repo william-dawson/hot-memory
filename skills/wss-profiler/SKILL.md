@@ -147,16 +147,17 @@ What to do with the result:
   - PMU `mem_access` fallback: total memory-access event count, useful for
     traffic intensity and `FLOP/access` even when `accessed_mb` is unavailable
 - If `clear_refs_ok` is false, stop and tell the user to re-run with `--privileged`.
-- The tool stores `fp_events` internally and `wss_run_profiled` injects them as
-  `WSS_PERF_FP_EVENTS` automatically — **but only when you use the MCP tool**.
-  If you ever run the profiled binary directly in the shell (e.g. to test a rebuild),
-  you must set the variable yourself first:
+- **If `shell_export` is non-empty, run it in the shell immediately after the
+  capability check — before any other commands:**
   ```
   export WSS_PERF_FP_EVENTS=0x74,0x75
-  mpirun -np 4 ./your_binary
   ```
-  If the profiled output says `WSS_PERF_FP_EVENTS not set`, the env var was never
-  received by the binary — either the MCP injection failed or the binary was run manually.
+  This ensures the variable is live for every subsequent command: MCP tool calls,
+  manual test runs, rebuild smoke tests, everything. Do not skip this step.
+- The tool also stores `fp_events` internally so `wss_run_profiled` can inject them
+  automatically, but that only covers MCP-mediated runs. The shell export covers all cases.
+- If the profiled output says `WSS_PERF_FP_EVENTS not set`, the shell export was not run
+  or was run in a different shell session. Re-run the export and retry.
 - If ad-hoc shell experiments disagree with the capability result, rerun the
   capability check and show the raw result again. Do not replace the
   capability model with speculative prose.
@@ -249,10 +250,9 @@ Treat this as three separate permission gates:
    correctly. Only fall back to a manual compiler invocation when the
    project has no build system at all.
 3. Call `wss_run_profiled` with `mpirun_prefix` and `binary_command`.
-   - `fp_events` from Step 0 are injected automatically via `WSS_PERF_FP_EVENTS`.
+   - `WSS_PERF_FP_EVENTS` should already be set from the `shell_export` step in Step 0.
      After the run, confirm the profiled output does NOT contain `WSS_PERF_FP_EVENTS not set`.
-     If it does, inject manually: `export WSS_PERF_FP_EVENTS=<events from Step 0>` before
-     calling `wss_run_profiled` or running the binary directly.
+     If it does, re-run the `shell_export` command from the capability check result and retry.
 4. Parse `measurements[]` for results. Check `errors[]` for `[WSS] ERROR` lines.
 5. Present the results table (see "How to interpret results" below).
 

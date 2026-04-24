@@ -306,6 +306,7 @@ async function wssCapabilityCheck(args) {
     gflop_probe: gflop,
     runtime_probe_output: runtimeOutput,
     summary: { available, unavailable },
+    shell_export: fpEventsEnv ? `export WSS_PERF_FP_EVENTS=${fpEventsEnv}` : '',
   };
 }
 
