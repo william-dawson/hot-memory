@@ -252,11 +252,17 @@ async function wssCapabilityCheck(args) {
       unavailable.push('hot-byte measurement — WSS runtime probe ran but reported 0 hot MB');
     }
 
+    // Always store discovered fp_events so wss_run_profiled can inject them,
+    // even when the probe smoke-test read 0 — the real profiled kernel may still count.
+    if (fpEventsEnv) {
+      state.fpEvents = fpEventsEnv;
+    }
+
     if (fpOk && fpSource === 'papi') {
       available.push('FLOP count (verified through WSS runtime probe using PAPI)');
-    } else if (fpOk && fpSource === 'perf_fallback' && fpEventsEnv) {
-      state.fpEvents = fpEventsEnv;
-      available.push(`perf_event_open FP fallback: WSS_PERF_FP_EVENTS=${state.fpEvents}`);
+    } else if (fpEventsEnv && fpSource === 'perf_fallback') {
+      available.push(`perf_event_open FP fallback: WSS_PERF_FP_EVENTS=${state.fpEvents}` +
+        (fpOk ? '' : ' (probe smoke-test read 0 — will try in real profiled run)'));
     } else {
       unavailable.push('FLOP count — WSS runtime probe ran but reported 0 GFLOP');
     }

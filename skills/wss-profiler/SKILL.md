@@ -147,7 +147,16 @@ What to do with the result:
   - PMU `mem_access` fallback: total memory-access event count, useful for
     traffic intensity and `FLOP/access` even when `accessed_mb` is unavailable
 - If `clear_refs_ok` is false, stop and tell the user to re-run with `--privileged`.
-- The tool stores `fp_events` internally; `wss_run_profiled` picks them up automatically.
+- The tool stores `fp_events` internally and `wss_run_profiled` injects them as
+  `WSS_PERF_FP_EVENTS` automatically — **but only when you use the MCP tool**.
+  If you ever run the profiled binary directly in the shell (e.g. to test a rebuild),
+  you must set the variable yourself first:
+  ```
+  export WSS_PERF_FP_EVENTS=0x74,0x75
+  mpirun -np 4 ./your_binary
+  ```
+  If the profiled output says `WSS_PERF_FP_EVENTS not set`, the env var was never
+  received by the binary — either the MCP injection failed or the binary was run manually.
 - If ad-hoc shell experiments disagree with the capability result, rerun the
   capability check and show the raw result again. Do not replace the
   capability model with speculative prose.
@@ -240,7 +249,10 @@ Treat this as three separate permission gates:
    correctly. Only fall back to a manual compiler invocation when the
    project has no build system at all.
 3. Call `wss_run_profiled` with `mpirun_prefix` and `binary_command`.
-   - `fp_events` from Step 0 are injected automatically.
+   - `fp_events` from Step 0 are injected automatically via `WSS_PERF_FP_EVENTS`.
+     After the run, confirm the profiled output does NOT contain `WSS_PERF_FP_EVENTS not set`.
+     If it does, inject manually: `export WSS_PERF_FP_EVENTS=<events from Step 0>` before
+     calling `wss_run_profiled` or running the binary directly.
 4. Parse `measurements[]` for results. Check `errors[]` for `[WSS] ERROR` lines.
 5. Present the results table (see "How to interpret results" below).
 
@@ -431,6 +443,25 @@ When the user asks you to generate a skill file for their project:
 7. Save to `/skills/my-code/SKILL.md`.
 
 The generated skill must NOT reference this profiler, WSS macros, PAPI, or any instrumentation.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `WSS_PERF_FP_EVENTS not set` in profiled output | Env var not received by binary | Set manually: `export WSS_PERF_FP_EVENTS=<events>` before running |
+| All kernels report `0.000 GFLOP` despite capability check finding FP events | `WSS_PERF_FP_EVENTS` not set (see above) | Do NOT accept 0 GFLOP if capability check returned fp_events — always reconcile |
+| Capability check shows `fp_events: [0x74, 0x75]` but profiled run says not set | State mismatch between capability check and profiled run | Re-run capability check in same session, then immediately run `wss_run_profiled` |
+| `0 GFLOP` and capability check showed no FP events at all | No PAPI and no working PMU codes | Run `eval $(wss_probe_fp_events)` then re-run capability check with those codes as `extra_codes` |
+| `perf record` fails with Permission denied | `perf_event_paranoid` too high | Skip Phase 2; proceed to Phase 3 if you know target kernels |
+| `cannot open /proc/self/clear_refs` | Container not running with `--fakeroot` | Re-launch container with `--fakeroot` flag |
+| `mpirun: not enough slots` | OpenMPI slot detection broken in fakeroot | `OMPI_MCA_rmaps_base_oversubscribe=1` should be set; verify it is in env |
+| 0 GFLOP reported even though `WSS_PERF_FP_EVENTS` is set | OpenMPI CPU binding pins rank 0 so PMU counters don't fire | Add `--bind-to none` to mpirun, or verify `OMPI_MCA_hwloc_base_binding_policy=none` is set |
+
+**Critical rule**: if you see `WSS_PERF_FP_EVENTS not set` or `0.000 GFLOP` when you expected
+FP counting to work, **stop and diagnose** before reporting results. Do not present 0 GFLOP as
+the answer if the capability check found FP events.
 
 ---
 
