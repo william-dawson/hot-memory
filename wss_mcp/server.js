@@ -310,10 +310,45 @@ async function wssCapabilityCheck(args) {
   };
 }
 
+// ── Generic run sanity checks ──────────────────────────────────────────────────
+const ERROR_PATTERNS = [
+  /no such file or directory/i,
+  /segmentation fault/i,
+  /bus error/i,
+  /killed/i,
+  /cannot open/i,
+  /permission denied/i,
+  /error:/i,
+  /fatal:/i,
+  /abort/i,
+];
+
+function sanityCheckRun(exitCode, combined, elapsedMs) {
+  const warnings = [];
+  if (exitCode !== 0) {
+    warnings.push(`Binary exited with non-zero exit code ${exitCode}.`);
+  }
+  for (const pat of ERROR_PATTERNS) {
+    if (pat.test(combined)) {
+      warnings.push(`Output contains error pattern "${pat.source}" — check raw_output.`);
+      break;
+    }
+  }
+  if (elapsedMs < 500) {
+    warnings.push(
+      `Binary ran for only ${elapsedMs} ms. This is suspiciously fast — ` +
+      'it may have run from the wrong working directory, used the wrong input, or crashed silently.',
+    );
+  }
+  return warnings;
+}
+
 async function wssMeasureBaseline(args) {
   const { mpirun_prefix: mpirunPrefix = '', binary_command: binaryCommand } = args;
   const cmd = buildMpiRank0Command(mpirunPrefix, '/usr/bin/time -v', binaryCommand);
+  const t0 = Date.now();
   const result = await sh(cmd);
+  const elapsedMs = Date.now() - t0;
   const combined = result.stdout + result.stderr;
 
   let peakRssMb = null;
@@ -322,13 +357,20 @@ async function wssMeasureBaseline(args) {
     peakRssMb = Math.round(parseInt(rssMatch[1], 10) / 1024 * 100) / 100;
   }
 
+  const warnings = sanityCheckRun(result.exitCode, combined, elapsedMs);
+  if (peakRssMb === null) {
+    warnings.push('Could not parse peak RSS from /usr/bin/time -v output.');
+  }
+
   const note = peakRssMb === null
     ? 'Could not parse peak RSS — check raw_output for "/usr/bin/time -v" output'
     : `Peak RSS for rank 0: ${peakRssMb} MB. This is the upper bound for hot working set comparisons.`;
 
   return {
     peak_rss_mb: peakRssMb,
+    elapsed_ms: elapsedMs,
     exit_code: result.exitCode,
+    warnings,
     note,
     raw_output: combined,
   };
@@ -341,16 +383,34 @@ async function wssPerfProfile(args) {
     'perf record -e cycles -F 99 --call-graph=dwarf -o /tmp/wss_perf.data --',
     binaryCommand,
   );
+  const t0 = Date.now();
   const recordResult = await sh(recordCmd);
+  const elapsedMs = Date.now() - t0;
+  const recordCombined = recordResult.stdout + recordResult.stderr;
 
   const reportResult = await sh(
     'perf report -n --stdio -i /tmp/wss_perf.data 2>/dev/null | head -200',
   );
 
+  // Parse sample count from perf report header: "# Samples: N  of event"
+  const sampleMatch = reportResult.stdout.match(/# Samples:\s*(\d+)/);
+  const sampleCount = sampleMatch ? parseInt(sampleMatch[1], 10) : 0;
+
+  const warnings = sanityCheckRun(recordResult.exitCode, recordCombined, elapsedMs);
+  if (sampleCount < 50) {
+    warnings.push(
+      `perf captured only ${sampleCount} samples. The run was too short to get a useful ` +
+      'hotspot profile — the binary may have run from the wrong directory, used trivial input, or crashed.',
+    );
+  }
+
   return {
     raw_report: reportResult.stdout,
-    perf_record_output: recordResult.stdout + recordResult.stderr,
+    perf_record_output: recordCombined,
+    sample_count: sampleCount,
+    elapsed_ms: elapsedMs,
     exit_code: recordResult.exitCode,
+    warnings,
   };
 }
 
@@ -370,25 +430,35 @@ async function wssRunProfiled(args) {
   }
 
   if (mpirunPrefix) {
-    // Inject WSS_PERF_FP_EVENTS into the environment for the mpirun invocation
     const envPrefix = state.fpEvents ? `WSS_PERF_FP_EVENTS=${state.fpEvents}` : '';
     cmd = `${envPrefix ? envPrefix + ' ' : ''}${mpirunPrefix} ${binaryCommand}`;
-    extraEnv = {}; // already baked into cmd string
+    extraEnv = {};
   } else {
     cmd = binaryCommand;
-    // extraEnv carries WSS_PERF_FP_EVENTS
   }
 
+  const t0 = Date.now();
   const result = await sh(cmd, extraEnv);
+  const elapsedMs = Date.now() - t0;
   const combined = result.stdout + result.stderr;
   const { measurements, errors, initMessages } = parseWssOutput(combined);
+
+  const warnings = sanityCheckRun(result.exitCode, combined, elapsedMs);
+  if (measurements.length === 0) {
+    warnings.push(
+      'No [WSS] measurement lines found in output. The binary may not have been built ' +
+      'with -DPROFILE_WSS, may have run from the wrong directory, or may have crashed before reaching WSS_BEGIN.',
+    );
+  }
 
   return {
     measurements,
     errors,
     init_messages: initMessages,
     fp_events_used: state.fpEvents || null,
+    elapsed_ms: elapsedMs,
     exit_code: result.exitCode,
+    warnings,
     stdout: result.stdout,
     stderr: result.stderr,
   };

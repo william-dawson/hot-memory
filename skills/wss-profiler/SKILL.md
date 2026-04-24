@@ -184,19 +184,39 @@ for later hot-set comparisons. State that the remaining steps after this are
 hotspot discovery, instrumentation, rebuild, and profiled execution. Ask
 permission before proceeding.
 
+- **Check `warnings[]` first.** If any warnings are present, stop and resolve
+  them before proceeding. Do not continue with a baseline that produced warnings.
+  Common causes: wrong working directory, missing input file, silent crash, run
+  too short. Fix the command and rerun.
 - Record `peak_rss_mb`. This is the upper bound for all hot-set comparisons.
 - Report to user: "Peak memory for rank 0: X MB. Per-kernel hot sets will be
   fractions of this."
 
 ### Step 2: `wss_perf_profile` — identify which kernels to instrument
 
-Call `wss_perf_profile` with the same `mpirun_prefix` and `binary_command`.
+**Gate: check `perf_stat_ok` from Step 0 before attempting this step.**
+If `perf_stat_ok` is false, skip this step entirely. Do not call
+`wss_perf_profile`. Tell the user:
+
+> "perf is not available on this machine (perf_event_paranoid is too
+> restrictive). I cannot sample hotspots automatically. Please tell me
+> which kernels you want to instrument, or point me to the main compute
+> loop in the source so I can make a recommendation from the code."
+
+Then proceed directly to Step 3 using the user's guidance or your own
+reading of the source.
+
+If `perf_stat_ok` is true, call `wss_perf_profile` with the same
+`mpirun_prefix` and `binary_command`.
 
 Before running it, tell the user you are sampling the code to decide which
 functions are worth instrumenting. State that the remaining steps after this
 are instrumentation, rebuild, and profiled execution. Ask permission before
 proceeding.
 
+- **Check `warnings[]` first.** If any warnings are present — especially low
+  sample count — stop and diagnose before reading the report. A low-sample
+  report is not a valid basis for instrumentation decisions.
 - Read `raw_report`. Identify the top functions by sample %. Note which are
   in user code vs. MPI/library code.
 - Treat too-few-samples as a profiling setup problem, not a code conclusion.
@@ -255,8 +275,10 @@ Treat this as three separate permission gates:
      manual run, use the `env_prefix` from the capability check result as an inline
      prefix on the command — never a separate export.
      After the run, confirm the profiled output does NOT contain `WSS_PERF_FP_EVENTS not set`.
-4. Parse `measurements[]` for results. Check `errors[]` for `[WSS] ERROR` lines.
-5. Present the results table (see "How to interpret results" below).
+4. **Check `warnings[]` first.** If warnings are present — especially empty
+   measurements — stop and diagnose before reporting any results.
+5. Parse `measurements[]` for results. Check `errors[]` for `[WSS] ERROR` lines.
+6. Present the results table (see "How to interpret results" below).
 
 ---
 
