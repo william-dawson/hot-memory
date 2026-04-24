@@ -9,6 +9,7 @@ From: ubuntu:24.04
     wss_profiler/wss_profiler_f.c       /usr/local/include/wss_profiler_f.c
     wss_profiler/wss_profiler_mod.f90   /usr/local/include/wss_profiler_mod.f90
     wss_profiler/wss_probe_fp_events.c  /usr/local/include/wss_probe_fp_events.c
+    wss_profiler/wss_runtime_probe.c    /usr/local/include/wss_runtime_probe.c
     wss_profiler/wss_check              /usr/local/bin/wss_check
     wss_mcp/package.json                /usr/local/lib/wss-mcp/package.json
     wss_mcp/server.js                   /usr/local/lib/wss-mcp/server.js
@@ -55,7 +56,10 @@ From: ubuntu:24.04
 
     # Build and install diagnostic tools
     gcc -O2 -o /usr/local/bin/wss_probe_fp_events /usr/local/include/wss_probe_fp_events.c
+    mpicc -O2 -DPROFILE_WSS -o /usr/local/bin/wss_runtime_probe \
+        /usr/local/include/wss_runtime_probe.c -lwss_profiler -lpapi
     chmod +x /usr/local/bin/wss_probe_fp_events
+    chmod +x /usr/local/bin/wss_runtime_probe
     chmod +x /usr/local/bin/wss_check
 
     # Install WSS MCP server dependencies

@@ -7,7 +7,7 @@ EXTRA_CFLAGS ?=
 # wss_profiler.h is installed at /usr/local/include inside the container,
 # so no -I flag is needed.
 # Pass extra compiler defines with: make profile EXTRA_CFLAGS="-DFOO=bar"
-profile: CFLAGS  += -DPROFILE_WSS $(EXTRA_CFLAGS)
+profile: CFLAGS  += -DPROFILE_WSS -g -fno-omit-frame-pointer $(EXTRA_CFLAGS)
 profile: LDFLAGS += -lwss_profiler -lpapi
 profile: bench
 

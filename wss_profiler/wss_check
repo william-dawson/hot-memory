@@ -1,12 +1,13 @@
 #!/bin/sh
 # wss_check — one-shot capability check for the WSS profiler.
 #
-# Runs all Phase 0 diagnostics and emits a structured report to stdout.
-# Any arguments are passed through to wss_probe_fp_events as additional
-# event codes to probe (useful on new platforms with unknown PMU codes):
+# Uses the authoritative WSS runtime probe, which exercises the same
+# instrumentation path used by real profiled applications. Any arguments are
+# joined into a comma-separated WSS_PERF_FP_EVENTS string and passed to the
+# runtime probe:
 #
-#   wss_check                        # aarch64 defaults (0x74, 0x75)
-#   wss_check 0x74 0x75 0x1b 0x3c   # probe extra codes too
+#   wss_check                        # uses runtime defaults
+#   wss_check 0x74 0x75             # probes with WSS_PERF_FP_EVENTS=0x74,0x75
 
 SEP="────────────────────────────────────────────────"
 
@@ -18,59 +19,7 @@ echo "Architecture : $ARCH"
 echo "Kernel       : $KERNEL"
 echo ""
 
-# ── 1. PAPI ───────────────────────────────────────────────────────────────
-echo "$SEP"
-echo "PAPI"
-echo "$SEP"
-
-PAPI_COMP=$(papi_component_avail 2>&1) || true
-
-PAPI_COMP_OK=0
-PAPI_FP_EVENTS=""
-PAPI_MEM_EVENTS=""
-
-if echo "$PAPI_COMP" | grep -q "Name:.*perf_event"; then
-    # Extract the disabled reason if present (e.g. "libpfm4 no default PMU found")
-    PAPI_ERR=$(echo "$PAPI_COMP" | sed -n '/Name:[[:space:]]*perf_event/,/^Name:/p' | grep -i "Disabled:" | head -1 | sed 's/.*Disabled:[[:space:]]*//' | xargs)
-    if [ -n "$PAPI_ERR" ]; then
-        echo "  perf_event component : FAILED"
-        echo "    Reason: $PAPI_ERR"
-    else
-        echo "  perf_event component : OK"
-        PAPI_COMP_OK=1
-    fi
-else
-    echo "  perf_event component : not found (papi_component_avail gave no output)"
-fi
-
-if [ "$PAPI_COMP_OK" = "1" ]; then
-    PAPI_AVAIL=$(papi_avail 2>&1) || true
-    for ev in PAPI_DP_OPS PAPI_SP_OPS PAPI_FP_OPS; do
-        if echo "$PAPI_AVAIL" | grep "^$ev" | grep -q "Yes"; then
-            PAPI_FP_EVENTS="$PAPI_FP_EVENTS $ev"
-        fi
-    done
-    for ev in PAPI_LD_INS PAPI_SR_INS; do
-        if echo "$PAPI_AVAIL" | grep "^$ev" | grep -q "Yes"; then
-            PAPI_MEM_EVENTS="$PAPI_MEM_EVENTS $ev"
-        fi
-    done
-fi
-
-if [ -n "$PAPI_FP_EVENTS" ]; then
-    echo "  FP events            :$PAPI_FP_EVENTS  ✓"
-else
-    echo "  FP events            : none"
-fi
-if [ -n "$PAPI_MEM_EVENTS" ]; then
-    echo "  Memory events        :$PAPI_MEM_EVENTS  ✓"
-else
-    echo "  Memory events        : none"
-fi
-
-echo ""
-
-# ── 2. perf ───────────────────────────────────────────────────────────────
+# ── 1. perf ───────────────────────────────────────────────────────────────
 echo "$SEP"
 echo "perf"
 echo "$SEP"
@@ -98,77 +47,59 @@ fi
 
 echo ""
 
-# ── 3. FP event probe ─────────────────────────────────────────────────────
+# ── 2. WSS runtime probe ──────────────────────────────────────────────────
 echo "$SEP"
-echo "FP event probe  (exclude_kernel=1 — userspace only, matching the profiler)"
+echo "WSS runtime probe"
 echo "$SEP"
 
-WSS_PERF_FP_EVENTS=""
-
-if [ -n "$PAPI_FP_EVENTS" ]; then
-    echo "  PAPI provides FP events — perf_event_open fallback not needed."
-else
-    # Run the probe: capture stdout (export line) and stderr (diagnostics) separately.
-    # Print the diagnostics inline so the full picture appears in this report.
-    _PROBE_OUT=$(mktemp)
-    _PROBE_ERR=$(mktemp)
-    wss_probe_fp_events "$@" > "$_PROBE_OUT" 2> "$_PROBE_ERR" && _PROBE_RC=0 || _PROBE_RC=1
-
-    # Indent and print the diagnostic lines
-    sed 's/^/  /' "$_PROBE_ERR"
-
-    PROBE_EXPORT=$(cat "$_PROBE_OUT")
-    rm -f "$_PROBE_OUT" "$_PROBE_ERR"
-
-    if [ -n "$PROBE_EXPORT" ]; then
-        WSS_PERF_FP_EVENTS=$(echo "$PROBE_EXPORT" | sed 's/export WSS_PERF_FP_EVENTS=//')
-        echo ""
-        echo "  Result : WSS_PERF_FP_EVENTS=$WSS_PERF_FP_EVENTS  ✓"
-    else
-        echo ""
-        echo "  Result : no working codes found"
-        echo ""
-        if [ "$PERF_STAT_OK" = "0" ] || [ "$PARANOID" -ge 2 ] 2>/dev/null; then
-            echo "  Likely cause  : kernel is blocking hardware counters"
-            echo "  Fix           : sysctl kernel.perf_event_paranoid=-1 (requires host sysadmin)"
-            echo "                  or run container with --privileged"
-        else
-            echo "  Likely cause  : default event codes don't match this CPU's instruction set"
-            echo "  Action        : find raw FP event codes in your CPU PMU manual, then:"
-            echo "                  wss_check 0xNN 0xMM ..."
-            echo "  Cross-check   : these count kernel+user ops (not for profiling, just to"
-            echo "                  confirm the PMU is reachable at all):"
-            if [ "$ARCH" = "aarch64" ]; then
-                echo "                  perf stat -e armv8_pmuv3_0/event=0x74/ -- sleep 1"
-                echo "                  perf stat -e armv8_pmuv3_0/event=0x75/ -- sleep 1"
-            else
-                echo "                  perf stat -e rNN -- sleep 1   (NN = candidate code)"
-            fi
-            echo "                  If those count but this probe returned 0, it is a"
-            echo "                  container privilege issue, not an ISA mismatch."
-        fi
-    fi
+PROBE_ARG=""
+if [ "$#" -gt 0 ]; then
+    PROBE_ARG=$(printf "%s," "$@" | sed 's/,$//')
 fi
+
+_PROBE_OUT=$(mktemp)
+_PROBE_ERR=$(mktemp)
+if [ -n "$PROBE_ARG" ]; then
+    wss_runtime_probe "$PROBE_ARG" > "$_PROBE_OUT" 2> "$_PROBE_ERR" && _PROBE_RC=0 || _PROBE_RC=1
+else
+    wss_runtime_probe > "$_PROBE_OUT" 2> "$_PROBE_ERR" && _PROBE_RC=0 || _PROBE_RC=1
+fi
+
+sed 's/^/  /' "$_PROBE_ERR"
+
+probe_value() {
+    grep "^$1=" "$_PROBE_OUT" | head -1 | sed "s/^$1=//"
+}
+
+HOT_BYTES_OK=$(probe_value HOT_BYTES_OK)
+FP_OK=$(probe_value FP_OK)
+MEM_BYTES_OK=$(probe_value MEM_BYTES_OK)
+HOT_MB=$(probe_value HOT_MB)
+ACCESSED_MB=$(probe_value ACCESSED_MB)
+GFLOP=$(probe_value GFLOP)
+FP_SOURCE=$(probe_value FP_SOURCE)
+WSS_PERF_FP_EVENTS=$(probe_value WSS_PERF_FP_EVENTS_ENV)
+PAPI_FP_EVENT_COUNT=$(probe_value PAPI_FP_EVENT_COUNT)
+PAPI_MEM_EVENT_COUNT=$(probe_value PAPI_MEM_EVENT_COUNT)
+PERF_FP_FD_COUNT=$(probe_value PERF_FP_FD_COUNT)
+
+echo "  hot MB               : ${HOT_MB:-0}"
+echo "  accessed MB          : ${ACCESSED_MB:-0}"
+echo "  gflop                : ${GFLOP:-0}"
+echo "  fp source            : ${FP_SOURCE:-none}"
+echo "  papi fp event count  : ${PAPI_FP_EVENT_COUNT:-0}"
+echo "  papi mem event count : ${PAPI_MEM_EVENT_COUNT:-0}"
+echo "  perf fp fd count     : ${PERF_FP_FD_COUNT:-0}"
+
+if [ -n "$WSS_PERF_FP_EVENTS" ]; then
+    echo "  WSS_PERF_FP_EVENTS   : $WSS_PERF_FP_EVENTS"
+fi
+
+rm -f "$_PROBE_OUT" "$_PROBE_ERR"
 
 echo ""
 
-# ── 4. /proc/self/clear_refs ──────────────────────────────────────────────
-echo "$SEP"
-echo "Hot-byte measurement"
-echo "$SEP"
-
-if echo "1" > /proc/self/clear_refs 2>/dev/null; then
-    echo "  /proc/self/clear_refs : writable  ✓"
-    CLEARREFS_OK=1
-else
-    echo "  /proc/self/clear_refs : NOT writable"
-    echo "    Hot-byte measurement requires --privileged or --fakeroot"
-    CLEARREFS_OK=0
-fi
-
-echo ""
-
-# ── 5. Summary ────────────────────────────────────────────────────────────
+# ── 3. Summary ────────────────────────────────────────────────────────────
 echo "$SEP"
 echo "Summary"
 echo "$SEP"
@@ -177,7 +108,7 @@ echo ""
 AVAILABLE=""
 UNAVAILABLE=""
 
-if [ "$CLEARREFS_OK" = "1" ]; then
+if [ "$HOT_BYTES_OK" = "1" ]; then
     AVAILABLE="${AVAILABLE}  ✓  Hot-byte measurement (hot MB per kernel)\n"
 else
     UNAVAILABLE="${UNAVAILABLE}  ✗  Hot-byte measurement — container needs --privileged\n"
@@ -189,16 +120,16 @@ else
     UNAVAILABLE="${UNAVAILABLE}  ✗  perf sampling — check perf_event_paranoid\n"
 fi
 
-if [ -n "$PAPI_FP_EVENTS" ]; then
-    AVAILABLE="${AVAILABLE}  ✓  FLOP count (PAPI:$PAPI_FP_EVENTS)\n"
-elif [ -n "$WSS_PERF_FP_EVENTS" ]; then
+if [ "$FP_OK" = "1" ] && [ "$FP_SOURCE" = "papi" ]; then
+    AVAILABLE="${AVAILABLE}  ✓  FLOP count (PAPI runtime path)\n"
+elif [ "$FP_OK" = "1" ] && [ -n "$WSS_PERF_FP_EVENTS" ]; then
     AVAILABLE="${AVAILABLE}  ✓  FLOP count (perf_event_open: WSS_PERF_FP_EVENTS=$WSS_PERF_FP_EVENTS)\n"
 else
-    UNAVAILABLE="${UNAVAILABLE}  ✗  FLOP count — no working FP events found\n"
+    UNAVAILABLE="${UNAVAILABLE}  ✗  FLOP count — WSS runtime probe returned 0 GFLOP\n"
 fi
 
-if [ -n "$PAPI_MEM_EVENTS" ]; then
-    AVAILABLE="${AVAILABLE}  ✓  Bytes accessed + reuse factor (PAPI:$PAPI_MEM_EVENTS)\n"
+if [ "$MEM_BYTES_OK" = "1" ]; then
+    AVAILABLE="${AVAILABLE}  ✓  Bytes accessed + reuse factor (WSS runtime path)\n"
 else
     UNAVAILABLE="${UNAVAILABLE}  ✗  Bytes accessed / reuse factor (no PAPI memory events)\n"
 fi
@@ -208,12 +139,12 @@ if [ -n "$UNAVAILABLE" ]; then
     printf "Unavailable:\n%b\n" "$UNAVAILABLE"
 fi
 
-# ── 6. Recommended setup ──────────────────────────────────────────────────
+# ── 4. Recommended setup ──────────────────────────────────────────────────
 echo "$SEP"
 echo "Recommended setup"
 echo "$SEP"
 echo ""
-if [ -n "$WSS_PERF_FP_EVENTS" ]; then
+if [ "$FP_OK" = "1" ] && [ -n "$WSS_PERF_FP_EVENTS" ] && [ "$FP_SOURCE" = "perf_fallback" ]; then
     echo "  Run this before profiling (sets the FP event codes for the profiler):"
     echo ""
     echo "    export WSS_PERF_FP_EVENTS=$WSS_PERF_FP_EVENTS"
@@ -221,12 +152,12 @@ if [ -n "$WSS_PERF_FP_EVENTS" ]; then
     echo "  Then run the profiled binary in this shell, or pass the var inline:"
     echo ""
     echo "    WSS_PERF_FP_EVENTS=$WSS_PERF_FP_EVENTS mpirun -np <N> ./solver ..."
-elif [ -n "$PAPI_FP_EVENTS" ]; then
-    echo "  No extra setup needed — PAPI provides FP events."
+elif [ "$FP_OK" = "1" ] && [ "$FP_SOURCE" = "papi" ]; then
+    echo "  No extra setup needed — the WSS runtime probe measured FLOPs via PAPI."
     echo "  Build with -DPROFILE_WSS and link -lwss_profiler -lpapi."
 else
     echo "  FLOPs will not be counted on this machine."
-    echo "  Hot-byte measurement and perf sampling still work."
-    echo "  If you can identify working FP event codes, re-run: wss_check 0xNN ..."
+    echo "  Hot-byte measurement and perf sampling may still work."
+    echo "  Re-run this exact runtime probe with candidate codes: wss_check 0xNN 0xMM ..."
 fi
 echo ""

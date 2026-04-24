@@ -117,6 +117,13 @@ permission before proceeding.
 
 What to do with the result:
 - Show the raw capability result to the user before paraphrasing it.
+- Treat the WSS runtime probe embedded in `wss_capability_check` as the
+  authoritative source of truth for hot-byte, FLOP, and accessed-byte
+  capabilities. It exercises the same WSS instrumentation path used by real
+  profiled programs.
+- Tell the user exactly where the truth came from: cite `capability_truth_source`,
+  `fp_source`, `fp_events`, and `fp_events_provenance` when discussing FP
+  capability on machines without PAPI support.
 - Read `summary.unavailable` and report each item to the user before proceeding.
 - On `aarch64`, the tool should automatically retry with `["0x74","0x75"]`
   when PAPI FP events are unavailable. If `fp_events` is still empty and
@@ -124,6 +131,9 @@ What to do with the result:
   extra codes.
 - If `clear_refs_ok` is false, stop and tell the user to re-run with `--privileged`.
 - The tool stores `fp_events` internally; `wss_run_profiled` picks them up automatically.
+- If ad-hoc shell experiments disagree with the capability result, rerun the
+  capability check and show the raw result again. Do not replace the
+  capability model with speculative prose.
 
 Example report to give the user:
 ```

@@ -20,8 +20,16 @@
  *
  * Run:
  *   mpirun -np 4 ./bench
+ *
+ * Optional arguments:
+ *   ./bench [compute_iters] [stream_repeats]
+ *
+ * Increase these when validating PMU FP fallback on very fast machines.
+ * Example:
+ *   mpirun -np 4 ./bench 1000 8
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,14 +39,29 @@
 
 #define STREAM_N_TOTAL (16 * 1024 * 1024L)   /* 16M doubles total = 128 MB per array */
 #define COMPUTE_N      (4 * 1024 * 1024)     /* 4M doubles per rank = 32 MB */
-#define COMPUTE_ITERS  100                    /* fewer iters to keep runtime short */
+#define COMPUTE_ITERS  1000                   /* longer default to stabilise FP fallback */
+#define STREAM_REPEATS 1
+
+static int parse_positive_int_arg(const char *arg, const char *name)
+{
+    char *end = NULL;
+    errno = 0;
+    long value = strtol(arg, &end, 10);
+    if (errno != 0 || end == arg || *end != '\0' || value <= 0 || value > 1000000) {
+        fprintf(stderr, "invalid %s: %s\n", name, arg);
+        return -1;
+    }
+    return (int)value;
+}
 
 /* Memory-bandwidth-bound: sweeps local portion of array once. */
-static void stream_kernel(double *a, double *b, double *c, long n)
+static void stream_kernel(double *a, double *b, double *c, long n, int repeats)
 {
-    #pragma omp parallel for schedule(static)
-    for (long i = 0; i < n; i++)
-        c[i] = a[i] + b[i];
+    for (int rep = 0; rep < repeats; rep++) {
+        #pragma omp parallel for schedule(static)
+        for (long i = 0; i < n; i++)
+            c[i] = a[i] + b[i];
+    }
 }
 
 /*
@@ -61,6 +84,23 @@ int main(int argc, char **argv)
 {
     MPI_Init(&argc, &argv);
     WSS_INIT();
+
+    int compute_iters = COMPUTE_ITERS;
+    int stream_repeats = STREAM_REPEATS;
+    if (argc >= 2) {
+        compute_iters = parse_positive_int_arg(argv[1], "compute_iters");
+        if (compute_iters < 0) MPI_Abort(MPI_COMM_WORLD, 2);
+    }
+    if (argc >= 3) {
+        stream_repeats = parse_positive_int_arg(argv[2], "stream_repeats");
+        if (stream_repeats < 0) MPI_Abort(MPI_COMM_WORLD, 2);
+    }
+    if (argc > 3) {
+        if (_wss_rank == 0) {
+            fprintf(stderr, "usage: %s [compute_iters] [stream_repeats]\n", argv[0]);
+        }
+        MPI_Abort(MPI_COMM_WORLD, 2);
+    }
 
     int rank, nprocs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -92,7 +132,7 @@ int main(int argc, char **argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     WSS_BEGIN();
-    stream_kernel(a, b, c, local_stream_n);
+    stream_kernel(a, b, c, local_stream_n, stream_repeats);
     WSS_END("stream_kernel");
 
     /* Allreduce to add real MPI communication */
@@ -105,7 +145,7 @@ int main(int argc, char **argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     WSS_BEGIN();
-    compute_kernel(x, COMPUTE_N, COMPUTE_ITERS);
+    compute_kernel(x, COMPUTE_N, compute_iters);
     WSS_END("compute_kernel");
 
     /* Allreduce after compute */
@@ -135,6 +175,8 @@ int main(int argc, char **argv)
      */
 
     if (rank == 0) {
+        fprintf(stderr, "bench config: compute_iters=%d stream_repeats=%d\n",
+                compute_iters, stream_repeats);
         printf("checksum: %g\n", global_sum);
     }
 

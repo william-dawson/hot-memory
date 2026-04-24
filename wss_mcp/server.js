@@ -26,40 +26,16 @@ function sh(cmd, extraEnv = {}) {
   });
 }
 
-function parsePapiComponentStatus(output) {
-  if (!output || output.includes('command not found')) {
-    return {
-      component: 'not_found',
-      error: 'papi_component_avail not found in PATH',
-    };
+function parseKeyValueOutput(output) {
+  const values = {};
+  for (const line of output.split('\n')) {
+    const idx = line.indexOf('=');
+    if (idx <= 0) continue;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    values[key] = value;
   }
-
-  const lines = output.split('\n');
-  const perfIdx = lines.findIndex((line) => /Name:\s+perf_event\b/.test(line));
-  if (perfIdx === -1) {
-    return {
-      component: 'not_found',
-      error: 'perf_event component not listed by papi_component_avail',
-    };
-  }
-
-  for (let i = perfIdx + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (/^Name:\s+/.test(line)) break;
-
-    const disabled = line.match(/Disabled:\s*(.*)/i);
-    if (disabled) {
-      return {
-        component: 'failed',
-        error: disabled[1].trim(),
-      };
-    }
-  }
-
-  return {
-    component: 'ok',
-    error: '',
-  };
+  return values;
 }
 
 // ── MPI rank-0 wrapper ─────────────────────────────────────────────────────────
@@ -206,55 +182,19 @@ async function wssCapabilityCheck(args) {
   const extraCodes = args.extra_codes || [];
   const available = [];
   const unavailable = [];
+  state.fpEvents = '';
 
   // 1. Architecture
   const archResult = await sh('uname -m');
   const arch = archResult.stdout.trim();
 
-  // 2. PAPI component check
-  const papiCompResult = await sh('papi_component_avail 2>&1');
-  const {
-    component: papiComponent,
-    error: papiComponentError,
-  } = parsePapiComponentStatus(papiCompResult.stdout);
-
-  // 3. PAPI event availability (only if PAPI component ok)
-  const papiFpEvents = [];
-  const papiMemEvents = [];
-  if (papiComponent === 'ok') {
-    const papiAvailResult = await sh('papi_avail 2>&1');
-    const papiLines = papiAvailResult.stdout.split('\n');
-    for (const line of papiLines) {
-      if (/PAPI_DP_OPS|PAPI_SP_OPS|PAPI_FP_OPS/.test(line) && /Yes/.test(line)) {
-        const evName = line.trim().split(/\s+/)[0];
-        papiFpEvents.push(evName);
-      }
-      if (/PAPI_LD_INS|PAPI_SR_INS/.test(line) && /Yes/.test(line)) {
-        const evName = line.trim().split(/\s+/)[0];
-        papiMemEvents.push(evName);
-      }
-    }
-    if (papiFpEvents.length > 0) {
-      available.push(`PAPI FP counters: ${papiFpEvents.join(', ')}`);
-    } else {
-      unavailable.push('PAPI FP counters (libpfm4 may not know this CPU microarchitecture)');
-    }
-    if (papiMemEvents.length > 0) {
-      available.push(`PAPI load/store counters: ${papiMemEvents.join(', ')}`);
-    } else {
-      unavailable.push('PAPI load/store counters (PAPI_LD_INS/PAPI_SR_INS not available — total bytes accessed and reuse factor will be 0)');
-    }
-  } else {
-    unavailable.push(`PAPI (${papiComponent}: ${papiComponentError})`);
-  }
-
-  // 4. perf_event_paranoid
+  // 2. perf_event_paranoid
   const paranoidResult = await sh('cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null');
   const perfEventParanoid = paranoidResult.exitCode === 0
     ? parseInt(paranoidResult.stdout.trim(), 10)
     : null;
 
-  // 5. perf stat test
+  // 3. perf stat test
   const perfStatResult = await sh('perf stat -e cycles -- echo ok 2>&1');
   const perfStatOk = perfStatResult.exitCode === 0 && !perfStatResult.stdout.includes('Permission denied');
   if (perfStatOk) {
@@ -263,68 +203,71 @@ async function wssCapabilityCheck(args) {
     unavailable.push('perf stat (permission denied — perf_event_paranoid may need to be set to ≤1 by sysadmin)');
   }
 
-  // 6. wss_probe_fp_events (if no PAPI FP events)
-  let fpProbeOutput = '';
-  let fpEvents = [];
-  if (papiFpEvents.length === 0) {
-    let probeCodeSets = [];
-    if (extraCodes.length > 0) {
-      probeCodeSets = [extraCodes];
-    } else if (arch === 'aarch64') {
-      probeCodeSets = [[], ['0x74', '0x75']];
-    } else {
-      probeCodeSets = [[]];
-    }
+  // 4. authoritative WSS runtime probe
+  const runtimeArg = extraCodes.length > 0 ? ` ${extraCodes.join(',')}` : '';
+  const runtimeResult = await sh(`wss_runtime_probe${runtimeArg} 2>&1`);
+  const runtimeOutput = runtimeResult.stdout + (runtimeResult.stderr || '');
+  const runtimeValues = parseKeyValueOutput(runtimeResult.stdout);
 
-    let exportMatch = null;
-    const probeOutputs = [];
-    for (const codes of probeCodeSets) {
-      const probeCodes = codes.join(' ');
-      const probeCmd = `wss_probe_fp_events ${probeCodes} 2>&1`;
-      const probeResult = await sh(probeCmd);
-      const probeOutput = probeResult.stdout + (probeResult.stderr || '');
-      probeOutputs.push(probeOutput);
-      exportMatch = probeResult.stdout.match(/WSS_PERF_FP_EVENTS=([^\s]+)/);
-      if (exportMatch) break;
-    }
-    fpProbeOutput = probeOutputs.join('\n--- retry ---\n');
+  const hotMb = parseFloat(runtimeValues.HOT_MB || '0');
+  const accessedMb = parseFloat(runtimeValues.ACCESSED_MB || '0');
+  const gflop = parseFloat(runtimeValues.GFLOP || '0');
+  const hotBytesOk = runtimeValues.HOT_BYTES_OK === '1';
+  const fpOk = runtimeValues.FP_OK === '1';
+  const memBytesOk = runtimeValues.MEM_BYTES_OK === '1';
+  const fpSource = runtimeValues.FP_SOURCE || 'none';
+  const fpEventsEnv = runtimeValues.WSS_PERF_FP_EVENTS_ENV || '';
+  const fpEventsProvenance = runtimeValues.FP_EVENTS_PROVENANCE || 'none';
+  const capabilityTruthSource = runtimeValues.CAPABILITY_TRUTH_SOURCE || 'wss_runtime_probe';
+  const papiFpEventCount = parseInt(runtimeValues.PAPI_FP_EVENT_COUNT || '0', 10);
+  const papiMemEventCount = parseInt(runtimeValues.PAPI_MEM_EVENT_COUNT || '0', 10);
+  const perfFpFdCount = parseInt(runtimeValues.PERF_FP_FD_COUNT || '0', 10);
+  const fpEvents = fpEventsEnv ? fpEventsEnv.split(',').filter(Boolean) : [];
 
-    if (exportMatch) {
-      state.fpEvents = exportMatch[1];
-      fpEvents = state.fpEvents.split(',').filter(Boolean);
-      available.push(`perf_event_open FP fallback: WSS_PERF_FP_EVENTS=${state.fpEvents}`);
-    } else {
-      unavailable.push('perf_event_open FP fallback (wss_probe_fp_events found no working event codes — FLOP counts will be 0)');
-    }
+  if (hotBytesOk) {
+    available.push('hot-byte measurement (verified through WSS runtime probe)');
   } else {
-    // PAPI FP available, no need for raw PMU fallback
-    fpEvents = [];
-    fpProbeOutput = 'Skipped (PAPI FP events available)';
+    unavailable.push('hot-byte measurement — WSS runtime probe reported 0 hot MB (run container with --privileged)');
   }
 
-  // 7. /proc/self/clear_refs writability
-  let clearRefsOk = false;
-  try {
-    writeFileSync('/proc/self/clear_refs', '1\n');
-    clearRefsOk = true;
-    available.push('hot-byte measurement (/proc/self/clear_refs writable)');
-  } catch (_) {
-    unavailable.push('/proc/self/clear_refs not writable — hot-byte measurement will fail (run container with --privileged)');
+  if (fpOk && fpSource === 'papi') {
+    available.push('FLOP count (verified through WSS runtime probe using PAPI)');
+  } else if (fpOk && fpSource === 'perf_fallback' && fpEventsEnv) {
+    state.fpEvents = fpEventsEnv;
+    available.push(`perf_event_open FP fallback: WSS_PERF_FP_EVENTS=${state.fpEvents}`);
+  } else {
+    unavailable.push('FLOP count — WSS runtime probe reported 0 GFLOP');
+  }
+
+  if (memBytesOk) {
+    available.push('Bytes accessed + reuse factor (verified through WSS runtime probe)');
+  } else {
+    unavailable.push('Bytes accessed / reuse factor — WSS runtime probe reported 0 accessed MB');
   }
 
   state.capabilityChecked = true;
 
   return {
     arch,
-    papi_component: papiComponent,
-    papi_component_error: papiComponentError,
-    papi_fp_events: papiFpEvents,
-    papi_mem_events: papiMemEvents,
+    capability_truth_source: capabilityTruthSource,
+    papi_component: fpSource === 'papi' || papiMemEventCount > 0 ? 'active' : 'inactive',
+    papi_component_error: '',
+    papi_fp_events: [],
+    papi_mem_events: [],
+    papi_fp_event_count: papiFpEventCount,
+    papi_mem_event_count: papiMemEventCount,
     perf_event_paranoid: perfEventParanoid,
     perf_stat_ok: perfStatOk,
-    fp_probe_output: fpProbeOutput,
+    fp_probe_output: runtimeOutput,
     fp_events: fpEvents,
-    clear_refs_ok: clearRefsOk,
+    fp_events_provenance: fpEventsProvenance,
+    clear_refs_ok: hotBytesOk,
+    fp_source: fpSource,
+    perf_fp_fd_count: perfFpFdCount,
+    hot_mb_probe: hotMb,
+    accessed_mb_probe: accessedMb,
+    gflop_probe: gflop,
+    runtime_probe_output: runtimeOutput,
     summary: { available, unavailable },
   };
 }

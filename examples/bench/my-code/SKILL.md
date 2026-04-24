@@ -28,8 +28,8 @@ Key functions:
 - `stream_kernel(a, b, c, n)` — writes `c[i] = a[i] + b[i]` over the local
   portion of 16 M doubles total; three arrays split across ranks; with 4 ranks
   each rank touches ~8 MB per array (~24 MB total) — memory-bandwidth-bound
-- `compute_kernel(x, n, iters)` — 4 M doubles per rank, 100 multiply-add
-  iterations per element — compute-bound
+- `compute_kernel(x, n, iters)` — 4 M doubles per rank, 1000 multiply-add
+  iterations per element by default — compute-bound
 
 ## Build command
 
@@ -52,12 +52,25 @@ The `profile` target also accepts extra compiler defines via `EXTRA_CFLAGS`:
 ```bash
 make profile EXTRA_CFLAGS="-DFOO=bar"
 ```
+The profiling build already adds `-g -fno-omit-frame-pointer` so `perf`
+can recover routine names and call stacks more reliably.
 
 ## Run command
 
 ```bash
 mpirun -np 4 ./bench
 ```
+
+Optional arguments let you lengthen the profiled kernels when validating
+counter behaviour on fast machines:
+
+```bash
+mpirun -np 4 ./bench 1000 8
+```
+
+Argument meanings:
+- first argument: `compute_iters`
+- second argument: `stream_repeats`
 
 Successful run prints one line to stdout and exits 0:
 ```
@@ -81,3 +94,7 @@ value depends on the number of ranks.
 - There is an `MPI_Allreduce` after each kernel for synchronisation.
 - Arrays are pre-initialised before the kernel runs, so all pages are
   already mapped.
+- If FP fallback counters look flaky on a very fast system, rerun with a
+  larger `compute_iters` value such as `1000` or `5000`.
+- The `make profile` target preserves debug info and frame pointers to make
+  `perf` hotspot discovery more reliable.
