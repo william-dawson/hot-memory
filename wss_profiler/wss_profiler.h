@@ -139,8 +139,10 @@ static inline void _wss_papi_init(void)
  *
  * Reads WSS_PERF_FP_EVENTS from the environment — a comma-separated list of
  * raw PMU event codes in hex, e.g. "0x74,0x75". One fd is opened per code;
- * their counts are summed at WSS_END. Only codes that pass a smoke test
- * (counter actually increments in userspace) are kept.
+ * their counts are summed at WSS_END. An init-time smoke test is run for
+ * diagnostics, but explicitly supplied codes are still kept even if that
+ * smoke test reads zero. Some MPI/container launch modes produce false
+ * negatives in the smoke loop even when the real profiled kernel counts.
  *
  * Obtain the right codes for your machine using the probe tool:
  *   eval $(wss_probe_fp_events)
@@ -234,19 +236,22 @@ static inline void _wss_perf_fp_init(void)
         }
         ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
         long long smoke_count = 0;
-        read(fd, &smoke_count, sizeof(long long));
+        ssize_t smoke_read = read(fd, &smoke_count, sizeof(long long));
         ioctl(fd, PERF_EVENT_IOC_RESET, 0);
 
-        if (smoke_count == 0) {
-            fprintf(stderr, "[WSS] perf_event_open(event=0x%lx) opened but reads 0"
-                            " (PMU not exposed in userspace) — skipping\n", code);
-            close(fd);
-            tok = next;
-            continue;
+        if (smoke_read != (ssize_t)sizeof(long long)) {
+            fprintf(stderr, "[WSS] perf_event_open(event=0x%lx) smoke read failed: %m"
+                            " — keeping this fd because WSS_PERF_FP_EVENTS was"
+                            " explicitly set\n", code);
+        } else if (smoke_count == 0) {
+            fprintf(stderr, "[WSS] perf_event_open(event=0x%lx) opened but smoke=0"
+                            " inside WSS_INIT — keeping this fd and letting the"
+                            " real profiled kernel decide\n", code);
+        } else {
+            fprintf(stderr, "[WSS] perf_event_open FP fallback: event 0x%lx"
+                            " smoke=%lld ops ✓\n", code, smoke_count);
         }
 
-        fprintf(stderr, "[WSS] perf_event_open FP fallback: event 0x%lx"
-                        " smoke=%lld ops ✓\n", code, smoke_count);
         _wss_fp_fds[_wss_n_fp_fds++] = fd;
         tok = next;
     }

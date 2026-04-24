@@ -205,9 +205,11 @@ async function wssCapabilityCheck(args) {
 
   // 4. authoritative WSS runtime probe
   const runtimeArg = extraCodes.length > 0 ? ` ${extraCodes.join(',')}` : '';
-  const runtimeResult = await sh(`wss_runtime_probe${runtimeArg} 2>&1`);
+  const runtimeLaunch = `mpirun -np 1 wss_runtime_probe${runtimeArg}`;
+  const runtimeResult = await sh(runtimeLaunch);
   const runtimeOutput = runtimeResult.stdout + (runtimeResult.stderr || '');
   const runtimeValues = parseKeyValueOutput(runtimeResult.stdout);
+  const runtimeProbeLaunchOk = runtimeResult.exitCode === 0;
 
   const hotMb = parseFloat(runtimeValues.HOT_MB || '0');
   const accessedMb = parseFloat(runtimeValues.ACCESSED_MB || '0');
@@ -224,25 +226,29 @@ async function wssCapabilityCheck(args) {
   const perfFpFdCount = parseInt(runtimeValues.PERF_FP_FD_COUNT || '0', 10);
   const fpEvents = fpEventsEnv ? fpEventsEnv.split(',').filter(Boolean) : [];
 
-  if (hotBytesOk) {
-    available.push('hot-byte measurement (verified through WSS runtime probe)');
+  if (!runtimeProbeLaunchOk) {
+    unavailable.push(`WSS runtime probe launch failed (${runtimeLaunch})`);
   } else {
-    unavailable.push('hot-byte measurement — WSS runtime probe reported 0 hot MB (run container with --privileged)');
-  }
+    if (hotBytesOk) {
+      available.push('hot-byte measurement (verified through WSS runtime probe)');
+    } else {
+      unavailable.push('hot-byte measurement — WSS runtime probe ran but reported 0 hot MB');
+    }
 
-  if (fpOk && fpSource === 'papi') {
-    available.push('FLOP count (verified through WSS runtime probe using PAPI)');
-  } else if (fpOk && fpSource === 'perf_fallback' && fpEventsEnv) {
-    state.fpEvents = fpEventsEnv;
-    available.push(`perf_event_open FP fallback: WSS_PERF_FP_EVENTS=${state.fpEvents}`);
-  } else {
-    unavailable.push('FLOP count — WSS runtime probe reported 0 GFLOP');
-  }
+    if (fpOk && fpSource === 'papi') {
+      available.push('FLOP count (verified through WSS runtime probe using PAPI)');
+    } else if (fpOk && fpSource === 'perf_fallback' && fpEventsEnv) {
+      state.fpEvents = fpEventsEnv;
+      available.push(`perf_event_open FP fallback: WSS_PERF_FP_EVENTS=${state.fpEvents}`);
+    } else {
+      unavailable.push('FLOP count — WSS runtime probe ran but reported 0 GFLOP');
+    }
 
-  if (memBytesOk) {
-    available.push('Bytes accessed + reuse factor (verified through WSS runtime probe)');
-  } else {
-    unavailable.push('Bytes accessed / reuse factor — WSS runtime probe reported 0 accessed MB');
+    if (memBytesOk) {
+      available.push('Bytes accessed + reuse factor (verified through WSS runtime probe)');
+    } else {
+      unavailable.push('Bytes accessed / reuse factor — WSS runtime probe ran but reported 0 accessed MB');
+    }
   }
 
   state.capabilityChecked = true;
@@ -258,6 +264,9 @@ async function wssCapabilityCheck(args) {
     papi_mem_event_count: papiMemEventCount,
     perf_event_paranoid: perfEventParanoid,
     perf_stat_ok: perfStatOk,
+    runtime_probe_launch: runtimeLaunch,
+    runtime_probe_launch_ok: runtimeProbeLaunchOk,
+    runtime_probe_exit_code: runtimeResult.exitCode,
     fp_probe_output: runtimeOutput,
     fp_events: fpEvents,
     fp_events_provenance: fpEventsProvenance,
