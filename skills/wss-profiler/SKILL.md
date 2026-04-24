@@ -84,6 +84,8 @@ inspect it for warnings, timing data, or unexpected output.
 - PAPI (`libpapi-dev`, `papi-tools`), `perf` (`linux-tools-generic`)
 - Runtime flags: `--privileged` (needed for `clear_refs` and `perf_event_open`)
 - Host may need: `sysctl kernel.perf_event_paranoid=-1`
+- OpenMPI rank binding must be disabled for profiling in this container:
+  use `OMPI_MCA_hwloc_base_binding_policy=none` or `mpirun --bind-to none`
 
 ---
 
@@ -129,6 +131,11 @@ What to do with the result:
   when PAPI FP events are unavailable. If `fp_events` is still empty and
   `perf_stat_ok` is true, then try again with additional architecture-specific
   extra codes.
+- If a direct runtime probe works but an MPI-launched run reports zero FLOPs,
+  check OpenMPI CPU binding first. In this container the default binding can
+  pin rank 0 in a way that makes raw perf fallback counters read zero. Retry
+  with `mpirun --bind-to none ...` or ensure
+  `OMPI_MCA_hwloc_base_binding_policy=none` is set.
 - If `clear_refs_ok` is false, stop and tell the user to re-run with `--privileged`.
 - The tool stores `fp_events` internally; `wss_run_profiled` picks them up automatically.
 - If ad-hoc shell experiments disagree with the capability result, rerun the

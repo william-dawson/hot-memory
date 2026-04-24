@@ -188,6 +188,8 @@ OpenMPI's `hwloc` topology detection sees only 1 slot inside a Singularity `--fa
 
 Additionally, `--fakeroot` makes the user appear as root, so OpenMPI requires `OMPI_ALLOW_RUN_AS_ROOT=1` and `OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1`. Both are set in `/etc/bash.bashrc`.
 
+OpenMPI's default rank binding can also break raw `perf_event_open` fallback counters in this container: MPI-launched ranks may be pinned to CPU 0 and report zero FLOPs even when the same counters work in direct launches. The fix is `OMPI_MCA_hwloc_base_binding_policy=none` (or `mpirun --bind-to none`). This is also set in `/etc/bash.bashrc`.
+
 ---
 
 ## Claude Code setup in the container
