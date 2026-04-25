@@ -12,11 +12,11 @@ const state = {
 
 // ── Shell helper ───────────────────────────────────────────────────────────────
 // Async so long-running profiling jobs don't block the MCP server event loop.
-function sh(cmd, extraEnv = {}) {
+function sh(cmd, extraEnv = {}, cwd = undefined) {
   return new Promise((resolve) => {
-    const proc = spawn('/bin/sh', ['-c', cmd], {
-      env: { ...process.env, ...extraEnv },
-    });
+    const spawnOpts = { env: { ...process.env, ...extraEnv } };
+    if (cwd) spawnOpts.cwd = cwd;
+    const proc = spawn('/bin/sh', ['-c', cmd], spawnOpts);
     let stdout = '';
     let stderr = '';
     proc.stdout.on('data', (d) => { stdout += d.toString(); });
@@ -142,6 +142,10 @@ const TOOLS = [
           type: 'string',
           description: 'The binary and its arguments (e.g. "./solver input.cfg")',
         },
+        working_dir: {
+          type: 'string',
+          description: 'Directory to run the binary from (e.g. "/workspace/CloverLeaf"). Required when the binary reads input files from its working directory.',
+        },
       },
       required: ['binary_command'],
     },
@@ -161,6 +165,10 @@ const TOOLS = [
         binary_command: {
           type: 'string',
           description: 'The binary and its arguments (e.g. "./solver input.cfg")',
+        },
+        working_dir: {
+          type: 'string',
+          description: 'Directory to run the binary from (e.g. "/workspace/CloverLeaf"). Required when the binary reads input files from its working directory.',
         },
       },
       required: ['binary_command'],
@@ -182,6 +190,10 @@ const TOOLS = [
         binary_command: {
           type: 'string',
           description: 'The binary and its arguments (e.g. "./solver input.cfg")',
+        },
+        working_dir: {
+          type: 'string',
+          description: 'Directory to run the binary from (e.g. "/workspace/CloverLeaf"). Required when the binary reads input files from its working directory.',
         },
       },
       required: ['binary_command'],
@@ -344,10 +356,10 @@ function sanityCheckRun(exitCode, combined, elapsedMs) {
 }
 
 async function wssMeasureBaseline(args) {
-  const { mpirun_prefix: mpirunPrefix = '', binary_command: binaryCommand } = args;
+  const { mpirun_prefix: mpirunPrefix = '', binary_command: binaryCommand, working_dir: workingDir = '' } = args;
   const cmd = buildMpiRank0Command(mpirunPrefix, '/usr/bin/time -v', binaryCommand);
   const t0 = Date.now();
-  const result = await sh(cmd);
+  const result = await sh(cmd, {}, workingDir || undefined);
   const elapsedMs = Date.now() - t0;
   const combined = result.stdout + result.stderr;
 
@@ -377,14 +389,14 @@ async function wssMeasureBaseline(args) {
 }
 
 async function wssPerfProfile(args) {
-  const { mpirun_prefix: mpirunPrefix = '', binary_command: binaryCommand } = args;
+  const { mpirun_prefix: mpirunPrefix = '', binary_command: binaryCommand, working_dir: workingDir = '' } = args;
   const recordCmd = buildMpiRank0Command(
     mpirunPrefix,
     'perf record -e cycles -F 99 --call-graph=dwarf -o /tmp/wss_perf.data --',
     binaryCommand,
   );
   const t0 = Date.now();
-  const recordResult = await sh(recordCmd);
+  const recordResult = await sh(recordCmd, {}, workingDir || undefined);
   const elapsedMs = Date.now() - t0;
   const recordCombined = recordResult.stdout + recordResult.stderr;
 
@@ -421,7 +433,7 @@ async function wssRunProfiled(args) {
     };
   }
 
-  const { mpirun_prefix: mpirunPrefix = '', binary_command: binaryCommand } = args;
+  const { mpirun_prefix: mpirunPrefix = '', binary_command: binaryCommand, working_dir: workingDir = '' } = args;
 
   let cmd;
   let extraEnv = {};
@@ -438,7 +450,7 @@ async function wssRunProfiled(args) {
   }
 
   const t0 = Date.now();
-  const result = await sh(cmd, extraEnv);
+  const result = await sh(cmd, extraEnv, workingDir || undefined);
   const elapsedMs = Date.now() - t0;
   const combined = result.stdout + result.stderr;
   const { measurements, errors, initMessages } = parseWssOutput(combined);

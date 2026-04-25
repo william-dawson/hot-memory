@@ -176,8 +176,11 @@ Capability check:
 
 ### Step 1: `wss_measure_baseline` — peak RSS upper bound
 
-Call `wss_measure_baseline` with `binary_command` (and `mpirun_prefix` for
-MPI codes, e.g. `"mpirun -np 4"`).
+Call `wss_measure_baseline` with `binary_command`, `mpirun_prefix` (for MPI
+codes), and `working_dir` if the code skill's run command starts with `cd`.
+**Always pass `working_dir`** when the binary reads input files from its
+working directory — if you omit it, the tool runs from `/workspace` and the
+binary silently reads the wrong input or finds nothing at all.
 
 Before running it, tell the user you are measuring peak RSS as an upper bound
 for later hot-set comparisons. State that the remaining steps after this are
@@ -207,7 +210,7 @@ Then proceed directly to Step 3 using the user's guidance or your own
 reading of the source.
 
 If `perf_stat_ok` is true, call `wss_perf_profile` with the same
-`mpirun_prefix` and `binary_command`.
+`mpirun_prefix`, `binary_command`, and `working_dir`.
 
 Before running it, tell the user you are sampling the code to decide which
 functions are worth instrumenting. State that the remaining steps after this
@@ -270,7 +273,7 @@ Treat this as three separate permission gates:
    build system or build target to add `-DPROFILE_WSS -lwss_profiler -lpapi`
    correctly. Only fall back to a manual compiler invocation when the
    project has no build system at all.
-3. Call `wss_run_profiled` with `mpirun_prefix` and `binary_command`.
+3. Call `wss_run_profiled` with `mpirun_prefix`, `binary_command`, and `working_dir`.
    - `WSS_PERF_FP_EVENTS` is injected automatically by `wss_run_profiled`. For any
      manual run, use the `env_prefix` from the capability check result as an inline
      prefix on the command — never a separate export.
