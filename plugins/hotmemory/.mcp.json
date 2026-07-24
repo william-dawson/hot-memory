@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "hotmemory-profiler": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/run_mcp.sh",
-      "args": []
+      "command": "node",
+      "args": ["/usr/local/lib/wss-mcp/server.js"]
     }
   }
 }

@@ -27,6 +27,8 @@ skills/
   wss-profiler/SKILL.md     Profiler skill — baked into the image and exposed as /wss-profiler slash command
   code-template/SKILL.md    Blank template users copy to write their code skill
 
+plugins/hotmemory/           Container-first Claude/Codex plugin bundle
+
 examples/
   bench/
     bench.c                 Synthetic MPI benchmark (two deliberately contrasting kernels)
@@ -47,7 +49,7 @@ AGENTS.md                   Developer reference for agents and contributors
 
 ## The skills system — the central abstraction
 
-Skills are markdown files placed in `~/.claude/commands/` so Claude Code can invoke them as slash commands (e.g. `/wss-profiler`, `/my-code`). The container's `/etc/bash.bashrc` copies them there on every interactive bash session.
+Skills are markdown files placed in `~/.claude/commands/` so Claude Code can invoke them as slash commands (e.g. `/wss-profiler`, `/hotmemory`, `/my-code`). The container's `/etc/bash.bashrc` activates the bundled Hot Memory plugin and copies its skills there on every interactive bash session.
 
 **Two skills are always in play:**
 
@@ -142,7 +144,9 @@ From: hotmemory.sif
         && rm -rf /var/lib/apt/lists/*
 ```
 
-**Changing the baked-in skill** — edit `skills/wss-profiler/SKILL.md` then rebuild the SIF. The `%files` section in `hotmemory.def` copies it in.
+**Changing the baked-in skills** — edit the relevant file under `skills/` or
+`plugins/hotmemory/`, then rebuild the SIF. The `%files` section in
+`hotmemory.def` packages both the detailed profiler skill and the plugin bundle.
 
 **The `perf` symlink** — `linux-tools-generic` installs a kernel-version-specific binary under `/usr/lib/linux-tools-*/perf`. The def file resolves this with `ln -sf $(find ... -name perf | head -1) /usr/local/bin/perf`. If perf breaks after a base image update, this is where to look.
 
@@ -195,7 +199,11 @@ OpenMPI's default rank binding can also break raw `perf_event_open` fallback cou
 
 **HOME isolation**: `/etc/bash.bashrc` sets `HOME=/tmp/claude-home` and `PATH` to system paths only. This prevents Claude from picking up the host user's broken symlinks or interfering dotfiles. The bashrc then populates `/tmp/claude-home/.claude/commands/` with the baked-in skills.
 
-**MCP registration**: The container seeds a project-scoped `/workspace/.mcp.json` pointing at `/usr/local/lib/wss-mcp/server.js` if the mounted workspace is writable and no `.mcp.json` already exists. This avoids depending on per-user Claude settings inside the container and makes the MCP config visible in the project root.
+**MCP registration**: The container activates the bundled plugin and seeds a
+project-scoped `/workspace/.mcp.json` from `plugins/hotmemory/.mcp.json`, which
+points at `/usr/local/lib/wss-mcp/server.js`, if the mounted workspace is
+writable and no `.mcp.json` already exists. This keeps Claude setup inside the
+container and makes the MCP config visible in the project root.
 
 **Why not `--no-home`?** Using `--no-home` flag causes Claude Code to hang on startup — likely a pseudo-terminal issue inside the Singularity sandbox. Setting `HOME=/tmp/claude-home` in `/etc/bash.bashrc` is cleaner and avoids this.
 

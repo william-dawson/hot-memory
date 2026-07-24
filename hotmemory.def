@@ -13,6 +13,10 @@ From: ubuntu:24.04
     wss_profiler/wss_check              /usr/local/bin/wss_check
     wss_mcp/package.json                /usr/local/lib/wss-mcp/package.json
     wss_mcp/server.js                   /usr/local/lib/wss-mcp/server.js
+    plugins/hotmemory/.mcp.json         /opt/hotmemory-plugin/.mcp.json
+    plugins/hotmemory/.claude-plugin/plugin.json /opt/hotmemory-plugin/.claude-plugin/plugin.json
+    plugins/hotmemory/.codex-plugin/plugin.json /opt/hotmemory-plugin/.codex-plugin/plugin.json
+    plugins/hotmemory/skills/hotmemory/SKILL.md /opt/hotmemory-plugin/skills/hotmemory/SKILL.md
 
 %environment
     export DEBIAN_FRONTEND=noninteractive
@@ -78,6 +82,7 @@ export OMP_NUM_THREADS=1
 
 mkdir -p "$HOME/.claude/commands"
 cp /skills/wss-profiler/SKILL.md "$HOME/.claude/commands/wss-profiler.md" 2>/dev/null
+cp /opt/hotmemory-plugin/skills/hotmemory/SKILL.md "$HOME/.claude/commands/hotmemory.md" 2>/dev/null
 if [ -f /skills/my-code/SKILL.md ]; then
     cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
 fi
@@ -85,17 +90,9 @@ fi
 # Seed project-scoped MCP config for Claude Code. Do not overwrite a user
 # provided .mcp.json; only create the file when the mounted workspace is
 # writable and no project config exists yet.
-if [ -d /workspace ] && [ -w /workspace ] && [ ! -e /workspace/.mcp.json ]; then
-cat > /workspace/.mcp.json << 'MCPJSON'
-{
-  "mcpServers": {
-    "wss-profiler": {
-      "command": "node",
-      "args": ["/usr/local/lib/wss-mcp/server.js"]
-    }
-  }
-}
-MCPJSON
+if [ -d /workspace ] && [ -w /workspace ] && [ ! -e /workspace/.mcp.json ] \
+    && [ -f /opt/hotmemory-plugin/.mcp.json ]; then
+cp /opt/hotmemory-plugin/.mcp.json /workspace/.mcp.json
 fi
 
 # Generate environment skill with user-invocable: false so Claude
@@ -138,6 +135,7 @@ BASHRC
     mkdir -p "$HOME/.claude/commands"
 
     cp /skills/wss-profiler/SKILL.md "$HOME/.claude/commands/wss-profiler.md"
+    cp /opt/hotmemory-plugin/skills/hotmemory/SKILL.md "$HOME/.claude/commands/hotmemory.md"
 
     if [ -f /skills/my-code/SKILL.md ]; then
         cp /skills/my-code/SKILL.md "$HOME/.claude/commands/my-code.md"
@@ -145,17 +143,9 @@ BASHRC
 
     # Seed project-scoped MCP config for Claude Code without overwriting a
     # user-provided .mcp.json.
-    if [ -d /workspace ] && [ -w /workspace ] && [ ! -e /workspace/.mcp.json ]; then
-    cat > /workspace/.mcp.json << 'MCPJSON'
-{
-  "mcpServers": {
-    "wss-profiler": {
-      "command": "node",
-      "args": ["/usr/local/lib/wss-mcp/server.js"]
-    }
-  }
-}
-MCPJSON
+    if [ -d /workspace ] && [ -w /workspace ] && [ ! -e /workspace/.mcp.json ] \
+        && [ -f /opt/hotmemory-plugin/.mcp.json ]; then
+    cp /opt/hotmemory-plugin/.mcp.json /workspace/.mcp.json
     fi
 
     cd /workspace

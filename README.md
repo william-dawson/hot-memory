@@ -83,8 +83,8 @@ At four MPI ranks, `stream_kernel` should touch about 96 MB and
 
 ## Plugin mode
 
-`plugins/hotmemory/` contains a Claude Code/Codex plugin that registers the
-profiling skill and MCP server. The server still runs inside the SIF.
+`plugins/hotmemory/` is bundled into the SIF. When you enter the container, it
+activates the profiling skill and registers the MCP server automatically.
 
 By default, the plugin looks for `hotmemory.sif` at the repository root. To
 use another image or Apptainer:
