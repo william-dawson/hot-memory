@@ -1,0 +1,9 @@
+{
+  "name": "hotmemory",
+  "version": "0.1.0",
+  "description": "Measure MPI kernel hot working sets, memory traffic, and FLOPs for GPU-memory planning.",
+  "author": {
+    "name": "William Dawson"
+  },
+  "keywords": ["hpc", "mpi", "profiling", "wss", "gpu", "memory"]
+}

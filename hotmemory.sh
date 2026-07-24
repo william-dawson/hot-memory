@@ -12,10 +12,9 @@
 #   ./hotmemory.sh /path/to/my/project /path/to/my/skill
 #   ./hotmemory.sh --build
 #
-# Environment variables (set before running):
-#   SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK  — required
-#   SINGULARITYENV_OPENAI_API_KEY            — required
+# Environment variables (optional):
 #   HOTMEMORY_SIF                            — path to SIF (default: ./hotmemory.sif)
+#   CLAUDE_CONFIG_DIR                        — Claude config directory to persist login
 
 set -e
 
@@ -48,18 +47,12 @@ if [ ! -f "$SIF" ]; then
         -O "$SIF"
 fi
 
-if [ -z "$SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK" ]; then
-    echo "Error: SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK is not set"
-    exit 1
-fi
-
-if [ -z "$SINGULARITYENV_OPENAI_API_KEY" ]; then
-    echo "Error: SINGULARITYENV_OPENAI_API_KEY is not set"
-    exit 1
-fi
+HOST_CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
+mkdir -p "$HOST_CLAUDE_DIR"
 
 exec singularity run --fakeroot --pwd /workspace \
     --bind "$CODE_DIR":/workspace \
     --bind "$SKILL_DIR":/skills/my-code \
+    --bind "$HOST_CLAUDE_DIR":/tmp/claude-home/.claude \
     "$@" \
     "$SIF" bash

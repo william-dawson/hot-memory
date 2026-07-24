@@ -1,155 +1,111 @@
 # Hot Memory
 
-> [!NOTE]
-This repository is a model of what an outsourced AI-agent deliverable should look like. The idea: when you hire someone to build a tool, they should ship it in a container that drops you straight into a vibe coding environment. Everything you need — the tool, its dependencies, and the skill files that teach your AI agent how to use it — is right there. You type `claude` and start working.
+Hot Memory profiles MPI applications to measure:
 
-The specific tool here is an HPC performance profiler. Given an MPI C/C++/Fortran code, it answers one key research question: for the key kernels in a program, how many unique bytes are **hot**.
+- per-kernel hot working sets;
+- memory traffic and FLOPs, when hardware counters are available;
+- likely GPU memory requirements.
 
-The motivation is GPU memory planning. Before porting a code to a small-memory GPU (like a consumer RTX), you need to know not just total allocation but the *hot working set* of each kernel. Total allocation is always a pessimistic overestimate — no single kernel touches all of it. The hot set tells you what actually needs to fit on the device, what can stay resident between kernels, and what must be swapped.
-
-### How we measure "hot" memory
-
-Before a kernel runs, we clear the Linux "Referenced" bit on every memory page by writing to `/proc/self/clear_refs`. After the kernel finishes, we read `/proc/self/smaps` and sum the `Referenced` fields — that's the number of unique 4 KB pages the kernel actually touched. This is a direct measurement at the OS level: no sampling, no estimation, no compiler instrumentation. The only approximation is 4 KB page granularity (if a kernel touches 1 byte on a page, the whole 4 KB counts).
-
-This gives a per-kernel hot working set in MB, which is the fundamental input for GPU memory planning: if the heaviest kernel's hot set fits in device memory, the whole code can run on the GPU without swapping.
-
----
-
-## How the delivery model works
-
-The container is the delivery vehicle. Inside it:
-
-```
-/skills/
-  wss-profiler/                 ← baked into the image
-    SKILL.md                      profiling methodology, interpretation, GPU memory reasoning
-    wss_profiler/*.h/*.f90/etc    source files
-  my-code/                      ← mounted by you at runtime
-    SKILL.md                      your code's build/run commands and kernel layout
-```
-
-Skill files are the key abstraction. One skill describes the profiling methodology (shipped by us). The other describes your specific code (written by you alone or with the help of AI). Neither references the other — Claude reads both and synthesises.
-
-> [!NOTE]
-> These tools bridge the knowledge gap. The developer of the profiling tool writes a skill so an agent knows how to use the tool. You help prepare the skill file related to the code to apply it to. An agent helps with both these tasks.
-
----
+It supports C, C++, and Fortran codes. The analysis is MPI-only.
 
 ## Requirements
 
-- Linux host
+- Linux on the target machine (x86_64 or aarch64)
 - Singularity or Apptainer
-- Amazon Bedrock access (for Claude Code)
+- Claude Code with an active subscription
+- An MPI application and a short build/run description
 
-The profiling tools require a real Linux kernel — Docker Desktop for Mac will not work. The workflow degrades gracefully depending on what the host permits:
+`perf`, PAPI, and hot-page measurement depend on host permissions. For the
+full workflow, an administrator may need to set:
 
-| Feature | Requires | Without it |
-|---------|----------|------------|
-| Hot-byte measurement (`/proc/clear_refs`) | `--fakeroot` or root | Not available |
-| Hotspot discovery (`perf record`) | `perf_event_paranoid` ≤ 0 | Phase 1 unavailable; skip to Phase 2 if you know which kernels to target |
-| FLOP counting (PAPI) | `perf_event_paranoid` ≤ 0 | FLOPs reported as 0; hot-byte measurement still works |
-
-For the full workflow, ask your sysadmin to set on the compute nodes:
 ```bash
 sysctl kernel.perf_event_paranoid=0
 ```
 
-### OpenMP policy
-
-This workflow must be treated as **MPI-only analysis**. Inside the container,
-`OMP_NUM_THREADS=1` is set and the agent should ignore OpenMP when building,
-running, and interpreting results.
-
-The reason is simple: PAPI hardware counters only instrument the **main
-thread**, so OpenMP worker-thread FLOPs and memory traffic are not measured.
-Although the hot-byte measurement (`/proc/self/smaps`) is process-wide, mixed
-MPI+OpenMP runs do not produce a consistent metric set. If your code normally
-uses OpenMP, disable it for profiling and analyse the MPI decomposition only.
-
----
+Hot-page measurement also requires `--fakeroot`, root, or equivalent
+permissions. OpenMP should be disabled; otherwise use `OMP_NUM_THREADS=1` and
+interpret the results as MPI-only.
 
 ## Quickstart
 
-**1. Get the repo**
+Clone and enter the repository:
 
 ```bash
 git clone https://github.com/william-dawson/hot-memory.git
 cd hot-memory
 ```
 
-Build the container from source:
+Build the image, or let `hotmemory.sh` download a release image when one is
+available:
+
 ```bash
 singularity build --fakeroot hotmemory.sif hotmemory.def
 ```
 
-If a pre-built release SIF is available, `hotmemory.sh` will download it
-automatically on first run instead.
-
-**2. Set your credentials**
+Launch Hot Memory with your code and its skill file:
 
 ```bash
-export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
-export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
+./hotmemory.sh /path/to/code /path/to/code-skill
 ```
 
-**3. Point it at your code**
-
-```bash
-./hotmemory.sh /path/to/your/code /path/to/your/code
-```
-
-If you already have a code skill, mount it as the second argument. If not, just mount your code directory for both — once inside, ask Claude:
-
-*"Generate a skill file for this project."*
-
-Claude will examine your source tree, figure out the build system, try building, and produce a SKILL.md describing your code. Review it, then you're ready to profile.
-
-Inside the container, start Claude Code:
+Inside the container, run:
 
 ```bash
 claude
 ```
 
-On startup, type `/wss-profiler`. This loads the profiling tool, shows you
-the machine's capabilities, and tells you what to do next. Then ask:
+On the first run, complete Claude Code's normal subscription login if needed.
 
-- *"Find the hotspots in my code."*
-- *"Measure the working set of stencil_apply."*
-- *"Will this fit on an RTX 5070?"*
+Then ask Claude to find hotspots or measure specific kernels. If you do not
+have a code skill yet, mount the code directory as both arguments and ask
+Claude to generate one:
 
-> **Note:** If `perf` returns "Permission denied", Phase 1 (hotspot discovery)
-> is unavailable but Phase 2 (hot-byte measurement) still works if you already
-> know which kernels to target. FLOP counts will be reported as 0. For the full
-> workflow, ask your sysadmin to run: `sysctl kernel.perf_event_paranoid=0`
+```bash
+./hotmemory.sh /path/to/code /path/to/code
+```
 
----
+## Built-in example
 
-## Try it with the built-in example
-
-The `examples/bench/` directory contains a synthetic MPI benchmark that is **already instrumented** with WSS profiling macros — no agent work needed. It has two kernels that split memory roughly 75/25: `stream_kernel` is memory-bound (~96 MB hot at 4 ranks) and `compute_kernel` is compute-bound (~32 MB hot). This is a quick sanity check that everything works.
+The benchmark is already instrumented:
 
 ```bash
 ./hotmemory.sh ./examples/bench ./examples/bench/my-code
 ```
 
-Inside the container:
+Inside Claude, ask:
 
-```bash
-claude
+```text
+Build with profiling and measure both kernels.
 ```
 
-Try asking:
-- *"Build with profiling and measure the working set of both kernels."*
-- *"Would this fit on a GPU with 4 GB of memory?"*
+At four MPI ranks, `stream_kernel` should touch about 96 MB and
+`compute_kernel` about 32 MB, subject to system noise and counter availability.
 
----
+## Plugin mode
 
-## Try it with CloverLeaf (agent-driven instrumentation)
+`plugins/hotmemory/` contains a Claude Code/Codex plugin that registers the
+profiling skill and MCP server. The server still runs inside the SIF.
 
-This is the real test of the workflow. CloverLeaf is a Lagrangian-Eulerian hydrodynamics mini-app with 9 distinct kernels per timestep — it is **not pre-instrumented**. Claude reads both skills, figures out how to instrument the Fortran code, builds, runs, and reports per-kernel hot sets autonomously.
+By default, the plugin looks for `hotmemory.sif` at the repository root. To
+use another image or Apptainer:
 
 ```bash
-./hotmemory.sh ./examples/cloverleaf ./examples/cloverleaf/my-code
+export HOTMEMORY_SIF=/path/to/hotmemory.sif
+export HOTMEMORY_RUNTIME=apptainer
 ```
 
-The skill file includes knowledge of using the fetch script to grab the code automatically. 
+The wrapper mounts `~/.claude` into the container so your normal Claude Code
+subscription login persists between runs. Set `CLAUDE_CONFIG_DIR` to use a
+different Claude configuration directory.
+
+## What the profiler measures
+
+Before each kernel, it clears Linux page-reference bits. Afterward, it reads
+`/proc/self/smaps` and reports the pages referenced by that kernel. Results are
+rounded to 4 KiB pages and include a small amount of process overhead.
+
+The MCP server provides capability checks, baseline RSS measurement, `perf`
+hotspot profiling, and structured WSS results. It does not modify source code;
+Claude decides where to instrument and how to rebuild the application.
+
+For implementation details and contributor guidance, see [AGENTS.md](AGENTS.md).

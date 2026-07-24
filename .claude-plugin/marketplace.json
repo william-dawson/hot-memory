@@ -1,0 +1,14 @@
+{
+  "name": "hot-memory",
+  "description": "Agent tools for HPC hot-memory profiling",
+  "owner": {
+    "name": "William Dawson"
+  },
+  "plugins": [
+    {
+      "name": "hotmemory",
+      "description": "Measure MPI kernel hot working sets, memory traffic, and FLOPs for GPU-memory planning.",
+      "source": "./plugins/hotmemory"
+    }
+  ]
+}

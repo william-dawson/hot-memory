@@ -74,9 +74,6 @@ apptainer build --fakeroot hotmemory.sif hotmemory.def
 
 **Test with the built-in example:**
 ```bash
-export SINGULARITYENV_AWS_BEARER_TOKEN_BEDROCK=<your-bearer-token>
-export SINGULARITYENV_OPENAI_API_KEY=<your-openai-api-key>
-
 ./hotmemory.sh ./examples/bench ./examples/bench/my-code
 ```
 
@@ -202,7 +199,7 @@ OpenMPI's default rank binding can also break raw `perf_event_open` fallback cou
 
 **Why not `--no-home`?** Using `--no-home` flag causes Claude Code to hang on startup — likely a pseudo-terminal issue inside the Singularity sandbox. Setting `HOME=/tmp/claude-home` in `/etc/bash.bashrc` is cleaner and avoids this.
 
-**Bedrock auth**: The container is configured to use Amazon Bedrock via Claude Code's native Bedrock mode (`CLAUDE_CODE_USE_BEDROCK=1`). The user supplies `AWS_BEARER_TOKEN_BEDROCK` and `OPENAI_API_KEY` at runtime as `SINGULARITYENV_*` variables, which Singularity converts to regular env vars inside the container. The Bedrock config variables (`CLAUDE_CODE_USE_BEDROCK`, `OPENAI_BASE_URL`, `AWS_REGION`) are set in `/etc/bash.bashrc`.
+**Claude authentication**: The container uses Claude Code's normal subscription authentication. `hotmemory.sh` mounts the host Claude configuration directory (default `~/.claude`) at `/tmp/claude-home/.claude` so login state persists between runs. Set `CLAUDE_CONFIG_DIR` to use a different directory.
 
 **If modifying Claude Code setup**: 
 - Do NOT use the official install script; it will break the SIF.

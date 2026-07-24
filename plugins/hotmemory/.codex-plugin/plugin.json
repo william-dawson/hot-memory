@@ -1,0 +1,22 @@
+{
+  "name": "hotmemory",
+  "version": "0.1.0",
+  "description": "Measure MPI kernel hot working sets, memory traffic, and FLOPs for GPU-memory planning.",
+  "author": {
+    "name": "William Dawson"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Hot Memory",
+    "shortDescription": "Profile MPI hot working sets and GPU-memory needs.",
+    "longDescription": "Measure per-kernel hot memory, memory traffic, and FLOPs using the Hot Memory profiling runtime.",
+    "developerName": "William Dawson",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": [
+      "Check whether the Hot Memory profiler is available.",
+      "Measure the hot working set of my MPI kernels."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}
